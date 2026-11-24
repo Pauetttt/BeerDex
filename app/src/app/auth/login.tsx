@@ -237,9 +237,9 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     color: COLORS.amberBright,
-    fontFamily: FONTS.display,
-    fontSize: 36,
-    fontWeight: '900',
+    fontFamily: FONTS.brand,
+    fontSize: 42,
+    fontWeight: '400',
     letterSpacing: 0.6,
   },
   brandSub: {

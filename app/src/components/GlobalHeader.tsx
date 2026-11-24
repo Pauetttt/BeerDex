@@ -158,13 +158,15 @@ const styles = StyleSheet.create({
   },
   logoText: {
     color: COLORS.amberBright,
-    fontFamily: FONTS.display,
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 0.3,
+    fontFamily: FONTS.brand,
+    fontSize: 25,
+    fontWeight: '400',
+    letterSpacing: 0.4,
+    lineHeight: 28,
   },
   logoTextNarrow: {
-    fontSize: 18,
+    fontSize: 22,
+    lineHeight: 25,
   },
   subHint: {
     color: COLORS.textSecondary,

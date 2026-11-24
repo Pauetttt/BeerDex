@@ -35,6 +35,10 @@ export const COLORS = {
 } as const;
 
 export const FONTS = {
+  brand: Platform.select({
+    web: '"UnifrakturMaguntia", "Outfit", serif',
+    default: undefined,
+  }),
   display: Platform.select({
     web: '"Outfit", "Plus Jakarta Sans", sans-serif',
     default: undefined,
