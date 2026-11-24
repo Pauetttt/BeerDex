@@ -14,14 +14,15 @@ export default function MenuScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { user, meProfile, loading, refreshMe } = useAuth();
+  const userId = user?.id ?? null;
   const theme = useAppTheme();
 
   useFocusEffect(
     useCallback(() => {
-      if (user) {
+      if (userId) {
         refreshMe();
       }
-    }, [user, refreshMe])
+    }, [userId, refreshMe])
   );
 
   if (!loading && !user) {
@@ -35,6 +36,12 @@ export default function MenuScreen() {
   const chapasBalance = user?.chapas ?? 0;
   const beersPct = beersTotal > 0 ? Math.min(100, Math.round((beersRegistered / beersTotal) * 100)) : 0;
   const achPct = achTotal > 0 ? Math.min(100, Math.round((achUnlocked / achTotal) * 100)) : 0;
+  const relicsOwned = meProfile?.cosmetics.relics.filter((r) => r.unlocked).length ?? 0;
+  const relicsTotal = meProfile?.cosmetics.relics.length ?? 16;
+  const activeRelicsCount =
+    meProfile?.activeRelicsSummary?.activeCount ??
+    user?.showcaseRelics?.filter(Boolean).length ??
+    0;
   const isTwoCol = width >= 620;
 
   return (
@@ -295,6 +302,41 @@ export default function MenuScreen() {
               </View>
               <View style={styles.chevronCircle}>
                 <Ionicons name="chevron-forward" size={20} color={COLORS.textSecondary} />
+              </View>
+            </LinearGradient>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/treasury')}
+            style={({ pressed }) => [styles.menuItemFull, pressed && styles.pressed]}
+          >
+            <LinearGradient
+              colors={GRADIENTS.card}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.menuCard, { borderColor: theme.border }, SHADOWS.card]}
+            >
+              <View style={[styles.iconBox, { borderColor: theme.border }]}>
+                <Ionicons name="diamond" size={26} color={theme.bright} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>Tesorería</Text>
+                <Text style={styles.cardDesc} numberOfLines={2}>
+                  Mejora tus reliquias del Nv. 1 al Nv. 5 y multiplica tus Chapas
+                </Text>
+                <View
+                  style={[
+                    styles.statPill,
+                    { backgroundColor: theme.tintBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={[styles.statPillText, { color: theme.bright }]}>
+                    {relicsOwned} / {relicsTotal} reliquias · {activeRelicsCount}/3 activas
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.chevronCircle}>
+                <Ionicons name="chevron-forward" size={20} color={theme.bright} />
               </View>
             </LinearGradient>
           </Pressable>

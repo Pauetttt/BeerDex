@@ -362,6 +362,9 @@ export default function ScanRegisterScreen() {
       if (res.completedBrandBonus && res.completedBrandBonus > 0) {
         parts.push(`+${res.completedBrandBonus} ¡Marca completada!`);
       }
+      if (res.relicBonusChapas && res.relicBonusChapas > 0) {
+        parts.push(`+${res.relicBonusChapas} por reliquias`);
+      }
       if (res.achievementChapas && res.achievementChapas > 0) {
         parts.push(`+${res.achievementChapas} por logros`);
       }

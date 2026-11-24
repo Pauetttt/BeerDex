@@ -3,7 +3,20 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { getDb, schema } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware';
-import { backfillUserChapasIfNeeded, parseCosmeticMetadata } from '../services/profileService';
+import {
+  backfillUserChapasIfNeeded,
+  getFullUserProfile,
+  parseCosmeticMetadata,
+} from '../services/profileService';
+import {
+  applyShopDiscount,
+  buildRelicPowerDto,
+  clampRelicLevel,
+  getActiveUserRelics,
+  getRelicUpgradeCost,
+  getShopDiscountPct,
+  RelicPowerDto,
+} from '../services/relicService';
 import { asyncHandler, HttpError } from '../utils/httpError';
 
 const router = Router();
@@ -25,9 +38,12 @@ export interface ShopCatalogItemDto {
   description: string;
   previewKey: string;
   priceChapas: number;
+  basePriceChapas?: number;
+  discountPct?: number;
   owned: boolean;
   equipped: boolean;
   metadata: Record<string, unknown> | null;
+  relicPower?: RelicPowerDto | null;
 }
 
 const buySchema = z
@@ -76,6 +92,7 @@ router.get(
       ownedIcons,
       ownedTitles,
       ownedCosmetics,
+      activeRelics,
     ] = await Promise.all([
       db
         .select()
@@ -101,63 +118,97 @@ router.get(
         .from(schema.userTitles)
         .where(eq(schema.userTitles.userId, userId)),
       db
-        .select({ cosmeticId: schema.userCosmetics.cosmeticId })
+        .select({
+          cosmeticId: schema.userCosmetics.cosmeticId,
+          level: schema.userCosmetics.level,
+        })
         .from(schema.userCosmetics)
         .where(eq(schema.userCosmetics.userId, userId)),
+      getActiveUserRelics(db, userId),
     ]);
 
+    const shopDiscountPct = getShopDiscountPct(activeRelics);
     const ownedIconSet = new Set(ownedIcons.map((r) => r.iconId));
     const ownedTitleSet = new Set(ownedTitles.map((r) => r.titleId));
     const ownedCosmeticSet = new Set(ownedCosmetics.map((r) => r.cosmeticId));
+    const ownedCosmeticLevelMap = new Map(
+      ownedCosmetics.map((r) => [r.cosmeticId, clampRelicLevel(r.level)])
+    );
     const showcaseIds = [user.showcaseSlot1Id, user.showcaseSlot2Id, user.showcaseSlot3Id];
 
-    const iconItems: ShopCatalogItemDto[] = shopIcons.map((icon) => ({
-      id: icon.id,
-      itemType: 'icon',
-      code: `icon_${icon.id}`,
-      name: icon.name,
-      description: 'Icono exclusivo de La Bodega para tu avatar.',
-      previewKey: icon.imageUrl,
-      priceChapas: icon.priceChapas ?? 0,
-      owned: ownedIconSet.has(icon.id),
-      equipped: user.equippedIconId === icon.id,
-      metadata: null,
-    }));
-
-    const titleItems: ShopCatalogItemDto[] = shopTitles.map((title) => ({
-      id: title.id,
-      itemType: 'title',
-      code: `title_${title.id}`,
-      name: title.name,
-      description: 'Título de honor exclusivo de La Bodega.',
-      previewKey: title.name,
-      priceChapas: title.priceChapas ?? 0,
-      owned: ownedTitleSet.has(title.id),
-      equipped: user.equippedTitleId === title.id,
-      metadata: null,
-    }));
-
-    const mapCosmetic = (c: typeof shopCosmetics[number]): ShopCatalogItemDto => ({
-      id: c.id,
-      itemType: c.type,
-      code: c.code,
-      name: c.name,
-      description: c.description,
-      previewKey: c.previewKey,
-      priceChapas: c.priceChapas ?? 0,
-      owned: ownedCosmeticSet.has(c.id),
-      equipped:
-        (c.type === 'frame' && user.equippedFrameId === c.id) ||
-        (c.type === 'card_style' && user.equippedCardStyleId === c.id) ||
-        (c.type === 'color_theme' && user.equippedColorThemeId === c.id) ||
-        (c.type === 'relic' && showcaseIds.includes(c.id)),
-      metadata: parseCosmeticMetadata(c.metadataJson),
+    const iconItems: ShopCatalogItemDto[] = shopIcons.map((icon) => {
+      const basePrice = icon.priceChapas ?? 0;
+      const effectivePrice = applyShopDiscount(basePrice, 'icon', shopDiscountPct);
+      return {
+        id: icon.id,
+        itemType: 'icon',
+        code: `icon_${icon.id}`,
+        name: icon.name,
+        description: 'Icono exclusivo de La Bodega para tu avatar.',
+        previewKey: icon.imageUrl,
+        priceChapas: effectivePrice,
+        basePriceChapas: basePrice,
+        discountPct: shopDiscountPct,
+        owned: ownedIconSet.has(icon.id),
+        equipped: user.equippedIconId === icon.id,
+        metadata: null,
+        relicPower: null,
+      };
     });
+
+    const titleItems: ShopCatalogItemDto[] = shopTitles.map((title) => {
+      const basePrice = title.priceChapas ?? 0;
+      const effectivePrice = applyShopDiscount(basePrice, 'title', shopDiscountPct);
+      return {
+        id: title.id,
+        itemType: 'title',
+        code: `title_${title.id}`,
+        name: title.name,
+        description: 'Título de honor exclusivo de La Bodega.',
+        previewKey: title.name,
+        priceChapas: effectivePrice,
+        basePriceChapas: basePrice,
+        discountPct: shopDiscountPct,
+        owned: ownedTitleSet.has(title.id),
+        equipped: user.equippedTitleId === title.id,
+        metadata: null,
+        relicPower: null,
+      };
+    });
+
+    const mapCosmetic = (c: typeof shopCosmetics[number]): ShopCatalogItemDto => {
+      const basePrice = c.priceChapas ?? 0;
+      const itemDiscount = c.type === 'relic' ? 0 : shopDiscountPct;
+      const effectivePrice = applyShopDiscount(basePrice, c.type, shopDiscountPct);
+      return {
+        id: c.id,
+        itemType: c.type,
+        code: c.code,
+        name: c.name,
+        description: c.description,
+        previewKey: c.previewKey,
+        priceChapas: effectivePrice,
+        basePriceChapas: basePrice,
+        discountPct: itemDiscount,
+        owned: ownedCosmeticSet.has(c.id),
+        equipped:
+          (c.type === 'frame' && user.equippedFrameId === c.id) ||
+          (c.type === 'card_style' && user.equippedCardStyleId === c.id) ||
+          (c.type === 'color_theme' && user.equippedColorThemeId === c.id) ||
+          (c.type === 'relic' && showcaseIds.includes(c.id)),
+        metadata: parseCosmeticMetadata(c.metadataJson),
+        relicPower:
+          c.type === 'relic'
+            ? buildRelicPowerDto(c.code, ownedCosmeticLevelMap.get(c.id) ?? 1)
+            : null,
+      };
+    };
 
     const mappedCosmetics = shopCosmetics.map(mapCosmetic);
 
     res.json({
       chapas: user.chapas,
+      shopDiscountPct,
       categories: {
         icons: iconItems,
         titles: titleItems,
@@ -183,6 +234,8 @@ router.post(
 
     const itemType: ShopItemType | undefined = parsed.data.itemType;
     const targetId = parsed.data.itemId ?? parsed.data.cosmeticId!;
+    const activeRelics = await getActiveUserRelics(db, userId);
+    const shopDiscountPct = getShopDiscountPct(activeRelics);
 
     if (itemType === 'icon') {
       const [icon] = await db
@@ -205,13 +258,15 @@ router.post(
         throw new HttpError(409, 'Ya tienes este icono en propiedad.');
       }
 
+      const effectivePrice = applyShopDiscount(icon.priceChapas, 'icon', shopDiscountPct);
+
       const deducted = await db
         .update(schema.users)
-        .set({ chapas: sql`${schema.users.chapas} - ${icon.priceChapas}` })
+        .set({ chapas: sql`${schema.users.chapas} - ${effectivePrice}` })
         .where(
           and(
             eq(schema.users.id, userId),
-            gte(schema.users.chapas, icon.priceChapas)
+            gte(schema.users.chapas, effectivePrice)
           )
         )
         .returning({ chapas: schema.users.chapas });
@@ -229,7 +284,7 @@ router.post(
       if (inserted.length === 0) {
         await db
           .update(schema.users)
-          .set({ chapas: sql`${schema.users.chapas} + ${icon.priceChapas}` })
+          .set({ chapas: sql`${schema.users.chapas} + ${effectivePrice}` })
           .where(eq(schema.users.id, userId));
         throw new HttpError(409, 'Ya tienes este icono en propiedad.');
       }
@@ -243,10 +298,13 @@ router.post(
           name: icon.name,
           description: 'Icono exclusivo de La Bodega para tu avatar.',
           previewKey: icon.imageUrl,
-          priceChapas: icon.priceChapas,
+          priceChapas: effectivePrice,
+          basePriceChapas: icon.priceChapas,
+          discountPct: shopDiscountPct,
           owned: true,
           equipped: false,
           metadata: null,
+          relicPower: null,
         },
       });
       return;
@@ -273,13 +331,15 @@ router.post(
         throw new HttpError(409, 'Ya tienes este título en propiedad.');
       }
 
+      const effectivePrice = applyShopDiscount(title.priceChapas, 'title', shopDiscountPct);
+
       const deducted = await db
         .update(schema.users)
-        .set({ chapas: sql`${schema.users.chapas} - ${title.priceChapas}` })
+        .set({ chapas: sql`${schema.users.chapas} - ${effectivePrice}` })
         .where(
           and(
             eq(schema.users.id, userId),
-            gte(schema.users.chapas, title.priceChapas)
+            gte(schema.users.chapas, effectivePrice)
           )
         )
         .returning({ chapas: schema.users.chapas });
@@ -297,7 +357,7 @@ router.post(
       if (inserted.length === 0) {
         await db
           .update(schema.users)
-          .set({ chapas: sql`${schema.users.chapas} + ${title.priceChapas}` })
+          .set({ chapas: sql`${schema.users.chapas} + ${effectivePrice}` })
           .where(eq(schema.users.id, userId));
         throw new HttpError(409, 'Ya tienes este título en propiedad.');
       }
@@ -311,10 +371,13 @@ router.post(
           name: title.name,
           description: 'Título de honor exclusivo de La Bodega.',
           previewKey: title.name,
-          priceChapas: title.priceChapas,
+          priceChapas: effectivePrice,
+          basePriceChapas: title.priceChapas,
+          discountPct: shopDiscountPct,
           owned: true,
           equipped: false,
           metadata: null,
+          relicPower: null,
         },
       });
       return;
@@ -350,13 +413,20 @@ router.post(
       throw new HttpError(409, 'Ya tienes este artículo en propiedad.');
     }
 
+    const effectivePrice = applyShopDiscount(
+      cosmetic.priceChapas,
+      cosmetic.type,
+      shopDiscountPct
+    );
+    const appliedDiscount = cosmetic.type === 'relic' ? 0 : shopDiscountPct;
+
     const deducted = await db
       .update(schema.users)
-      .set({ chapas: sql`${schema.users.chapas} - ${cosmetic.priceChapas}` })
+      .set({ chapas: sql`${schema.users.chapas} - ${effectivePrice}` })
       .where(
         and(
           eq(schema.users.id, userId),
-          gte(schema.users.chapas, cosmetic.priceChapas)
+          gte(schema.users.chapas, effectivePrice)
         )
       )
       .returning({ chapas: schema.users.chapas });
@@ -370,14 +440,14 @@ router.post(
 
     const inserted = await db
       .insert(schema.userCosmetics)
-      .values({ userId, cosmeticId: cosmetic.id, source: 'shop' })
+      .values({ userId, cosmeticId: cosmetic.id, source: 'shop', level: 1 })
       .onConflictDoNothing()
       .returning({ cosmeticId: schema.userCosmetics.cosmeticId });
 
     if (inserted.length === 0) {
       await db
         .update(schema.users)
-        .set({ chapas: sql`${schema.users.chapas} + ${cosmetic.priceChapas}` })
+        .set({ chapas: sql`${schema.users.chapas} + ${effectivePrice}` })
         .where(eq(schema.users.id, userId));
       throw new HttpError(409, 'Ya tienes este artículo en propiedad.');
     }
@@ -391,11 +461,142 @@ router.post(
         name: cosmetic.name,
         description: cosmetic.description,
         previewKey: cosmetic.previewKey,
-        priceChapas: cosmetic.priceChapas,
+        priceChapas: effectivePrice,
+        basePriceChapas: cosmetic.priceChapas,
+        discountPct: appliedDiscount,
         owned: true,
         equipped: false,
         metadata: parseCosmeticMetadata(cosmetic.metadataJson),
+        relicPower:
+          cosmetic.type === 'relic' ? buildRelicPowerDto(cosmetic.code, 1) : null,
       },
+    });
+  })
+);
+
+router.post(
+  '/relics/:id/upgrade',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const relicId = Number(req.params.id);
+    if (!Number.isInteger(relicId) || relicId <= 0) {
+      throw new HttpError(400, 'ID de reliquia inválido.');
+    }
+
+    const db = getDb();
+    const userId = req.userId!;
+
+    const [cosmetic] = await db
+      .select()
+      .from(schema.cosmetics)
+      .where(eq(schema.cosmetics.id, relicId));
+
+    if (!cosmetic || cosmetic.type !== 'relic') {
+      throw new HttpError(404, 'Reliquia no encontrada.');
+    }
+
+    const [ownedRow] = await db
+      .select({
+        cosmeticId: schema.userCosmetics.cosmeticId,
+        level: schema.userCosmetics.level,
+      })
+      .from(schema.userCosmetics)
+      .where(
+        and(
+          eq(schema.userCosmetics.userId, userId),
+          eq(schema.userCosmetics.cosmeticId, relicId)
+        )
+      );
+
+    let unlockedViaAchievement = false;
+    if (!ownedRow && cosmetic.unlockAchievementId) {
+      const [ua] = await db
+        .select({ unlocked: schema.userAchievements.unlocked })
+        .from(schema.userAchievements)
+        .where(
+          and(
+            eq(schema.userAchievements.userId, userId),
+            eq(schema.userAchievements.achievementId, cosmetic.unlockAchievementId)
+          )
+        );
+      unlockedViaAchievement = Boolean(ua?.unlocked);
+    }
+
+    if (!ownedRow && !unlockedViaAchievement) {
+      throw new HttpError(
+        403,
+        'Debes desbloquear o comprar esta reliquia antes de mejorarla.'
+      );
+    }
+
+    const currentLevel = ownedRow ? clampRelicLevel(ownedRow.level) : 1;
+    if (currentLevel >= 5) {
+      throw new HttpError(400, 'Esta reliquia ya ha alcanzado el nivel máximo (Nivel 5).');
+    }
+
+    const upgradeCost = getRelicUpgradeCost(cosmetic.code, currentLevel);
+    if (!upgradeCost) {
+      throw new HttpError(400, 'No se puede calcular el coste de mejora para esta reliquia.');
+    }
+
+    const nextLevel = currentLevel + 1;
+
+    const deducted = await db
+      .update(schema.users)
+      .set({ chapas: sql`${schema.users.chapas} - ${upgradeCost}` })
+      .where(
+        and(eq(schema.users.id, userId), gte(schema.users.chapas, upgradeCost))
+      )
+      .returning({ chapas: schema.users.chapas });
+
+    if (deducted.length === 0) {
+      throw new HttpError(
+        400,
+        'No tienes suficientes Chapas para mejorar esta reliquia.'
+      );
+    }
+
+    let upgradedRows: Array<{ level: number }>;
+    if (ownedRow) {
+      upgradedRows = await db
+        .update(schema.userCosmetics)
+        .set({ level: nextLevel })
+        .where(
+          and(
+            eq(schema.userCosmetics.userId, userId),
+            eq(schema.userCosmetics.cosmeticId, relicId),
+            eq(schema.userCosmetics.level, currentLevel)
+          )
+        )
+        .returning({ level: schema.userCosmetics.level });
+    } else {
+      upgradedRows = await db
+        .insert(schema.userCosmetics)
+        .values({
+          userId,
+          cosmeticId: relicId,
+          source: 'achievement',
+          level: nextLevel,
+        })
+        .onConflictDoNothing()
+        .returning({ level: schema.userCosmetics.level });
+    }
+
+    if (upgradedRows.length === 0) {
+      await db
+        .update(schema.users)
+        .set({ chapas: sql`${schema.users.chapas} + ${upgradeCost}` })
+        .where(eq(schema.users.id, userId));
+      throw new HttpError(409, 'La reliquia ya fue mejorada en otra petición. Inténtalo de nuevo.');
+    }
+
+    const profile = await getFullUserProfile(db, userId);
+
+    res.json({
+      newBalance: deducted[0].chapas,
+      relicId: cosmetic.id,
+      newLevel: nextLevel,
+      upgradeCostPaid: upgradeCost,
+      profile,
     });
   })
 );

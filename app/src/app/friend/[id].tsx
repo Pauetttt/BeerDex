@@ -34,6 +34,7 @@ export default function FriendProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, loading: authLoading, refreshMe } = useAuth();
+  const userId = user?.id ?? null;
   const { showAchievements } = useAchievementToast();
   const theme = useAppTheme();
 
@@ -42,7 +43,7 @@ export default function FriendProfileScreen() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!id || !user) return;
+    if (!id || !userId) return;
     let active = true;
     (async () => {
       try {
@@ -66,7 +67,7 @@ export default function FriendProfileScreen() {
     return () => {
       active = false;
     };
-  }, [id, user, refreshMe, showAchievements]);
+  }, [id, userId, refreshMe, showAchievements]);
 
   if (!authLoading && !user) {
     return <Redirect href="/auth/login" />;
@@ -173,10 +174,18 @@ export default function FriendProfileScreen() {
                       {relic ? (
                         <>
                           <View style={styles.vitrinaLightBar} />
-                          <RelicIcon previewKey={relic.previewKey} size={58} pedestal />
+                          <RelicIcon
+                            previewKey={relic.previewKey}
+                            size={58}
+                            pedestal
+                            level={relic.relicPower?.level ?? 1}
+                          />
                           <View style={styles.vitrinaPlaque}>
                             <Text style={styles.vitrinaSlotName} numberOfLines={1}>
                               {relic.name}
+                            </Text>
+                            <Text style={styles.vitrinaSlotLv}>
+                              Nv. {relic.relicPower?.level ?? 1}
                             </Text>
                           </View>
                         </>
@@ -445,6 +454,12 @@ const styles = StyleSheet.create({
   vitrinaSlotName: {
     color: COLORS.text,
     fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  vitrinaSlotLv: {
+    color: COLORS.amberBright,
+    fontSize: 9,
     fontWeight: '800',
     textAlign: 'center',
   },

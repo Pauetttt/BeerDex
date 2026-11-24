@@ -12,6 +12,7 @@ import {
   NewlyUnlockedItem,
   PublicProfileResponse,
   RegisterBeerResponse,
+  RelicUpgradeResponse,
   ShopBuyResponse,
   ShopItemType,
   ShopResponse,
@@ -59,15 +60,28 @@ export class ApiError extends Error {
 }
 
 let refreshInFlight: Promise<string | null> | null = null;
+let authSessionEpoch = 0;
 let onUnauthorizedCallback: (() => void) | null = null;
+
+export function invalidateAuthSession(): void {
+  authSessionEpoch += 1;
+  refreshInFlight = null;
+}
 
 export function setOnUnauthorizedHandler(cb: (() => void) | null): void {
   onUnauthorizedCallback = cb;
 }
 
 async function performRefresh(): Promise<string | null> {
+  const epoch = authSessionEpoch;
   const { refreshToken } = await getTokens();
-  if (!refreshToken) return null;
+  if (!refreshToken) {
+    if (epoch === authSessionEpoch) {
+      await clearTokens();
+      onUnauthorizedCallback?.();
+    }
+    return null;
+  }
 
   try {
     const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
@@ -75,12 +89,20 @@ async function performRefresh(): Promise<string | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     });
+    if (epoch !== authSessionEpoch) {
+      return null;
+    }
     if (!res.ok) {
-      await clearTokens();
-      onUnauthorizedCallback?.();
+      if (epoch === authSessionEpoch) {
+        await clearTokens();
+        onUnauthorizedCallback?.();
+      }
       return null;
     }
     const data = (await res.json()) as { accessToken: string; refreshToken: string };
+    if (epoch !== authSessionEpoch) {
+      return null;
+    }
     await setTokens(data.accessToken, data.refreshToken);
     return data.accessToken;
   } catch {
@@ -328,6 +350,11 @@ export const shopApi = {
     return request<ShopBuyResponse>('/shop/buy', {
       method: 'POST',
       body: payload,
+    });
+  },
+  upgradeRelic(relicId: number) {
+    return request<RelicUpgradeResponse>(`/shop/relics/${relicId}/upgrade`, {
+      method: 'POST',
     });
   },
 };

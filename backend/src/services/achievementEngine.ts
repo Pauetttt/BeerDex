@@ -1,5 +1,9 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
+import {
+  calculateAchievementRewardChapas,
+  getActiveUserRelics,
+} from './relicService';
 
 export interface NewlyUnlockedAchievement {
   id: number;
@@ -466,6 +470,7 @@ export async function evaluateAchievements(
   const newlyUnlocked: NewlyUnlockedAchievement[] = [];
   let unlocked99Count = 0;
   let totalChapasAwarded = 0;
+  const activeRelics = await getActiveUserRelics(db, userId);
 
   const first99 = allAchievements.filter((a) => a.id !== 100).sort((a, b) => a.id - b.id);
   const ultimateAch = allAchievements.find((a) => a.id === 100);
@@ -509,7 +514,12 @@ export async function evaluateAchievements(
     }
 
     if (!wasUnlocked && isNowUnlocked) {
-      totalChapasAwarded += ach.rewardChapas;
+      const rewardCalc = calculateAchievementRewardChapas(
+        ach.rewardChapas,
+        ach.category,
+        activeRelics
+      );
+      totalChapasAwarded += rewardCalc.totalRewardChapas;
       const rTitle = ach.rewardTitleId ? titleById.get(ach.rewardTitleId) : undefined;
       const rIcon = ach.rewardIconId ? iconById.get(ach.rewardIconId) : undefined;
       const rCosmetic = ach.rewardCosmeticId
@@ -520,7 +530,7 @@ export async function evaluateAchievements(
         code: ach.code,
         name: ach.name,
         description: ach.description,
-        rewardChapas: ach.rewardChapas,
+        rewardChapas: rewardCalc.totalRewardChapas,
         rewardTitle: rTitle ? { id: rTitle.id, name: rTitle.name } : null,
         rewardIcon: rIcon
           ? { id: rIcon.id, name: rIcon.name, imageUrl: rIcon.imageUrl }
@@ -572,7 +582,12 @@ export async function evaluateAchievements(
     }
 
     if (!wasUnlocked && isNowUnlocked) {
-      totalChapasAwarded += ultimateAch.rewardChapas;
+      const rewardCalc = calculateAchievementRewardChapas(
+        ultimateAch.rewardChapas,
+        ultimateAch.category,
+        activeRelics
+      );
+      totalChapasAwarded += rewardCalc.totalRewardChapas;
       const rTitle = ultimateAch.rewardTitleId
         ? titleById.get(ultimateAch.rewardTitleId)
         : undefined;
@@ -587,7 +602,7 @@ export async function evaluateAchievements(
         code: ultimateAch.code,
         name: ultimateAch.name,
         description: ultimateAch.description,
-        rewardChapas: ultimateAch.rewardChapas,
+        rewardChapas: rewardCalc.totalRewardChapas,
         rewardTitle: rTitle ? { id: rTitle.id, name: rTitle.name } : null,
         rewardIcon: rIcon
           ? { id: rIcon.id, name: rIcon.name, imageUrl: rIcon.imageUrl }

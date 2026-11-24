@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { and, eq, lte } from 'drizzle-orm';
+import { and, eq, lte, sql } from 'drizzle-orm';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -829,12 +829,18 @@ describe('BeerDex Backend API & Achievement Engine', () => {
   it('gestiona La Bodega (compra atómica, saldo insuficiente, doble compra) y equipamiento de cosméticos y vitrina', async () => {
     const db = getDb();
 
+    // Acreditar Chapas extra al usuario A para probar compras de reliquias reequilibradas
+    await db
+      .update(schema.users)
+      .set({ chapas: sql`${schema.users.chapas} + 2000` })
+      .where(eq(schema.users.id, userIdA));
+
     // Consultar tienda con usuario A
     const shopBefore = await request(app)
       .get('/api/shop')
       .set('Authorization', `Bearer ${accessTokenA}`);
     expect(shopBefore.status).toBe(200);
-    expect(shopBefore.body.chapas).toBeGreaterThan(200);
+    expect(shopBefore.body.chapas).toBeGreaterThan(2000);
     expect(shopBefore.body.categories.icons).toHaveLength(14);
     expect(shopBefore.body.categories.titles).toHaveLength(12);
     expect(shopBefore.body.categories.frames).toHaveLength(6);
@@ -851,14 +857,15 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       .send({ equippedFrameId: 8 });
     expect(lockedFrameRes.status).toBe(403);
 
-    // Comprar Reliquia "Posavasos de Múnich" (id 32, 120 Chapas)
+    // Comprar Reliquia "Posavasos de Múnich" (id 32, 1200 Chapas)
     const buyRelic = await request(app)
       .post('/api/shop/buy')
       .set('Authorization', `Bearer ${accessTokenA}`)
       .send({ itemType: 'relic', itemId: 32 });
     expect(buyRelic.status).toBe(200);
-    expect(buyRelic.body.newBalance).toBe(initialChapas - 120);
+    expect(buyRelic.body.newBalance).toBe(initialChapas - 1200);
     expect(buyRelic.body.item.owned).toBe(true);
+    expect(buyRelic.body.item.relicPower?.level).toBe(1);
 
     // Doble compra -> 409 y no descuenta saldo
     const dupBuy = await request(app)
@@ -870,7 +877,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     const meAfterDup = await request(app)
       .get('/api/me')
       .set('Authorization', `Bearer ${accessTokenA}`);
-    expect(meAfterDup.body.user.chapas).toBe(initialChapas - 120);
+    expect(meAfterDup.body.user.chapas).toBe(initialChapas - 1200);
 
     // Comprar un icono de tienda (Barril de Roble, id 24, 150 Chapas) y equiparlo
     const buyIcon = await request(app)
@@ -879,11 +886,11 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       .send({ itemType: 'icon', itemId: 24 });
     expect(buyIcon.status).toBe(200);
 
-    // Comprar un título de tienda (Parroquiano Fiel, id 25, 150 Chapas) si alcanza el saldo o intentar artículo caro (> saldo -> 400)
+    // Intentar artículo caro (> saldo -> 400)
     const tooExpensive = await request(app)
       .post('/api/shop/buy')
       .set('Authorization', `Bearer ${accessTokenA}`)
-      .send({ itemType: 'relic', itemId: 41 }); // 2000 Chapas
+      .send({ itemType: 'relic', itemId: 41 }); // 15000 Chapas
     expect(tooExpensive.status).toBe(400);
 
     // Equipar marco desbloqueado por logro (#7 Bronce Clásico id 2 -> usuario A completó 1 marca así que #17 Primera Casa sí, pero #7 requiere 150 cervezas -> usar Marco Estándar id 1 y reliquia comprada en vitrina hueco 1)
@@ -1315,5 +1322,203 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       process.env.NODE_ENV = prevNodeEnv;
       setRuntimeBindings(null);
     }
+  });
+
+  it('sistema completo de Reliquias (precios, mejora Nv.1->5 en Tesorería, multiplicadores y descuento en La Bodega)', async () => {
+    const db = getDb();
+
+    const regTester = await request(app).post('/api/auth/register').send({
+      email: 'relic_tester@beerdex.local',
+      username: 'RelicTester',
+      password: 'password123',
+    });
+    expect(regTester.status).toBe(201);
+    const tokenTester = regTester.body.accessToken as string;
+    const testerId = regTester.body.user.id as string;
+
+    // Acreditar saldo suficiente para probar compra + forja Nv.1 -> Nv.5
+    await db
+      .update(schema.users)
+      .set({ chapas: 60000 })
+      .where(eq(schema.users.id, testerId));
+
+    // 1) Precios reequilibrados de las 10 reliquias y metadata de 5 niveles
+    const shopRes = await request(app)
+      .get('/api/shop')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(shopRes.status).toBe(200);
+    const relicPrices = (shopRes.body.categories.relics as Array<{ priceChapas: number }>).map(
+      (r) => r.priceChapas
+    );
+    expect(relicPrices).toEqual([
+      1200, 1800, 2500, 3500, 5000, 6500, 8500, 10000, 12500, 15000,
+    ]);
+    expect(shopRes.body.categories.relics[0].relicPower?.levels).toHaveLength(5);
+
+    // 2) Intentar mejorar reliquia sin poseerla -> 403
+    const upgradeLocked = await request(app)
+      .post('/api/shop/relics/33/upgrade')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(upgradeLocked.status).toBe(403);
+
+    // 3) Comprar Abrebotellas Antiguo (33: 1800), Chapa de Platino (36: 5000), Llave (38: 8500) y Corona Real (41: 15000)
+    for (const id of [33, 36, 38, 41]) {
+      const buy = await request(app)
+        .post('/api/shop/buy')
+        .set('Authorization', `Bearer ${tokenTester}`)
+        .send({ itemType: 'relic', itemId: id });
+      expect(buy.status).toBe(200);
+    }
+
+    // 4) Subir Abrebotellas Antiguo (tier común: 500, 1000, 2000, 3500) de Nv.1 a Nv.5
+    const expectedCosts = [500, 1000, 2000, 3500];
+    for (let i = 0; i < expectedCosts.length; i += 1) {
+      const upg = await request(app)
+        .post('/api/shop/relics/33/upgrade')
+        .set('Authorization', `Bearer ${tokenTester}`);
+      expect(upg.status).toBe(200);
+      expect(upg.body.newLevel).toBe(i + 2);
+      expect(upg.body.upgradeCostPaid).toBe(expectedCosts[i]);
+    }
+
+    // Intentar superar Nv.5 -> 400
+    const upgradeOverMax = await request(app)
+      .post('/api/shop/relics/33/upgrade')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(upgradeOverMax.status).toBe(400);
+
+    // Probar saldo insuficiente al mejorar
+    await db
+      .update(schema.users)
+      .set({ chapas: 100 })
+      .where(eq(schema.users.id, testerId));
+    const upgradePoor = await request(app)
+      .post('/api/shop/relics/36/upgrade')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(upgradePoor.status).toBe(400);
+    await db
+      .update(schema.users)
+      .set({ chapas: 50000 })
+      .where(eq(schema.users.id, testerId));
+
+    // 5) Equipar las 3 reliquias activas en vitrina:
+    //    slot1: id 33 Nv.5 (+100% botellín), slot2: id 36 Nv.1 (+5 Ch. nueva), slot3: id 41 Nv.1 (+15% global 3/3)
+    const equipShowcase = await request(app)
+      .patch('/api/me')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({
+        showcaseSlot1Id: 33,
+        showcaseSlot2Id: 36,
+        showcaseSlot3Id: 41,
+      });
+    expect(equipShowcase.status).toBe(200);
+    expect(equipShowcase.body.activeRelicsSummary?.activeCount).toBe(3);
+    expect(equipShowcase.body.activeRelicsSummary?.fullShowcaseActive).toBe(true);
+
+    // Elegir 2 botellines Lager españoles (<7% ABV) de marcas con >2 cervezas (para completedBrandBonus = 0)
+    const catalogRows = await db.select().from(schema.beers);
+    const brandCountMap = new Map<number, number>();
+    for (const row of catalogRows) {
+      brandCountMap.set(row.brandId, (brandCountMap.get(row.brandId) || 0) + 1);
+    }
+    const lagerBotellines = catalogRows.filter(
+      (b) =>
+        b.format === 'botellin' &&
+        b.style === 'Lager' &&
+        b.country === 'España' &&
+        Number(b.abv) < 7 &&
+        (brandCountMap.get(b.brandId) || 0) > 2
+    );
+    expect(lagerBotellines.length).toBeGreaterThanOrEqual(2);
+
+    const regWithRelics = await request(app)
+      .post('/api/beers/register')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({
+        beerId: lagerBotellines[0].id,
+        rating: 3,
+        photoBase64: TINY_JPEG_BASE64,
+      });
+    expect(regWithRelics.status).toBe(201);
+    trackUploadUrl(regWithRelics.body.userBeer.photoUrl);
+    // Cálculo: ((10 + 5) * (1 + 1.00)) * 1.15 = 30 * 1.15 = 34.5 -> 35 (+25 bonus de reliquias)
+    expect(regWithRelics.body.relicBonusChapas).toBe(25);
+    // Logro #1 Primer Sorbo (15 base) * 1.15 global = 17.25 -> 17
+    expect(regWithRelics.body.achievementChapas).toBe(17);
+    expect(regWithRelics.body.chapasEarned).toBe(35 + 17);
+
+    // Desequipar la vitrina y registrar el segundo botellín -> 0 bonus de reliquias
+    const clearShowcase = await request(app)
+      .patch('/api/me')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({
+        showcaseSlot1Id: null,
+        showcaseSlot2Id: null,
+        showcaseSlot3Id: null,
+      });
+    expect(clearShowcase.status).toBe(200);
+    expect(clearShowcase.body.activeRelicsSummary?.activeCount).toBe(0);
+
+    const regNoRelics = await request(app)
+      .post('/api/beers/register')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({
+        beerId: lagerBotellines[1].id,
+        rating: 3,
+        photoBase64: TINY_JPEG_BASE64,
+      });
+    expect(regNoRelics.status).toBe(201);
+    trackUploadUrl(regNoRelics.body.userBeer.photoUrl);
+    expect(regNoRelics.body.relicBonusChapas).toBe(0);
+
+    // 6) Descuento en La Bodega con Llave de La Bodega (id 38, Nv.1 = -5%)
+    await request(app)
+      .patch('/api/me')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({ showcaseSlot1Id: 38 });
+
+    const discountedShop = await request(app)
+      .get('/api/shop')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(discountedShop.status).toBe(200);
+    expect(discountedShop.body.shopDiscountPct).toBe(5);
+    const barrilIcon = discountedShop.body.categories.icons.find(
+      (i: { id: number }) => i.id === 24
+    );
+    expect(barrilIcon.basePriceChapas).toBe(150);
+    expect(barrilIcon.priceChapas).toBe(143);
+    expect(barrilIcon.discountPct).toBe(5);
+
+    const munichRelic = discountedShop.body.categories.relics.find(
+      (r: { id: number }) => r.id === 32
+    );
+    expect(munichRelic.priceChapas).toBe(1200); // Reliquias no reciben descuento
+    expect(munichRelic.discountPct).toBe(0);
+
+    const balanceBeforeDiscountBuy = discountedShop.body.chapas;
+    const buyDiscountedIcon = await request(app)
+      .post('/api/shop/buy')
+      .set('Authorization', `Bearer ${tokenTester}`)
+      .send({ itemType: 'icon', itemId: 24 });
+    expect(buyDiscountedIcon.status).toBe(200);
+    expect(buyDiscountedIcon.body.newBalance).toBe(balanceBeforeDiscountBuy - 143);
+
+    // 7) Reliquia de logro desbloqueada (sin fila previa en user_cosmetics) mejora Nv.1 -> Nv.2 por 250 Chapas
+    await db
+      .update(schema.userAchievements)
+      .set({ currentProgress: 6, unlocked: true, unlockedAt: new Date() })
+      .where(
+        and(
+          eq(schema.userAchievements.userId, testerId),
+          eq(schema.userAchievements.achievementId, 62)
+        )
+      );
+
+    const upgradeAchRelic = await request(app)
+      .post('/api/shop/relics/29/upgrade')
+      .set('Authorization', `Bearer ${tokenTester}`);
+    expect(upgradeAchRelic.status).toBe(200);
+    expect(upgradeAchRelic.body.newLevel).toBe(2);
+    expect(upgradeAchRelic.body.upgradeCostPaid).toBe(250);
   });
 });

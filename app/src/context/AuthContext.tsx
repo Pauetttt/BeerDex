@@ -1,5 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { authApi, meApi, setOnUnauthorizedHandler } from '../services/api';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { authApi, invalidateAuthSession, meApi, setOnUnauthorizedHandler } from '../services/api';
 import {
   clearTokens,
   getAgeVerified,
@@ -29,8 +29,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [meProfile, setMeProfile] = useState<MeProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [ageVerified, setAgeVerifiedState] = useState(false);
+  const sessionGenRef = useRef(0);
 
   const handleForcedLogout = useCallback(() => {
+    sessionGenRef.current += 1;
     setUser(null);
     setMeProfile(null);
   }, []);
@@ -41,8 +43,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [handleForcedLogout]);
 
   const refreshMe = useCallback(async (): Promise<MeProfileResponse | null> => {
+    const gen = sessionGenRef.current;
+    const { accessToken, refreshToken } = await getTokens();
+    if (!accessToken && !refreshToken) {
+      return null;
+    }
     try {
       const profile = await meApi.getProfile();
+      if (sessionGenRef.current !== gen) {
+        return null;
+      }
       setMeProfile(profile);
       setUser(profile.user);
       return profile;
@@ -53,14 +63,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    const gen = sessionGenRef.current;
     (async () => {
       try {
         const [verified, tokens] = await Promise.all([getAgeVerified(), getTokens()]);
-        if (!active) return;
+        if (!active || sessionGenRef.current !== gen) return;
         setAgeVerifiedState(verified);
         if (tokens.accessToken || tokens.refreshToken) {
           const profile = await meApi.getProfile().catch(() => null);
-          if (!active) return;
+          if (!active || sessionGenRef.current !== gen) return;
           if (profile) {
             setMeProfile(profile);
             setUser(profile.user);
@@ -85,7 +96,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (username: string, password: string) => {
+      sessionGenRef.current += 1;
+      const gen = sessionGenRef.current;
       const res = await authApi.login({ username, password });
+      if (sessionGenRef.current !== gen) return;
       await setTokens(res.accessToken, res.refreshToken);
       setUser(res.user);
       await refreshMe();
@@ -95,7 +109,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(
     async (email: string, username: string, password: string) => {
+      sessionGenRef.current += 1;
+      const gen = sessionGenRef.current;
       const res = await authApi.register({ email, username, password });
+      if (sessionGenRef.current !== gen) return;
       await setTokens(res.accessToken, res.refreshToken);
       setUser(res.user);
       await refreshMe();
@@ -104,11 +121,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
+    sessionGenRef.current += 1;
+    invalidateAuthSession();
     const { refreshToken } = await getTokens();
-    await authApi.logout(refreshToken).catch(() => {});
     await clearTokens();
     setUser(null);
     setMeProfile(null);
+    if (refreshToken) {
+      void authApi.logout(refreshToken).catch(() => {});
+    }
   }, []);
 
   const applyMeProfile = useCallback((profile: MeProfileResponse) => {

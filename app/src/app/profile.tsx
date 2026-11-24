@@ -57,6 +57,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, meProfile, loading, refreshMe, applyMeProfile, logout } = useAuth();
+  const userId = user?.id ?? null;
   const { showAlert, showConfirm } = useAppAlert();
   const { showAchievements } = useAchievementToast();
   const theme = useAppTheme();
@@ -81,10 +82,10 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (user) {
+      if (userId) {
         refreshMe();
       }
-    }, [user, refreshMe])
+    }, [userId, refreshMe])
   );
 
   if (!loading && !user) {
@@ -216,7 +217,6 @@ export default function ProfileScreen() {
       await meApi.deleteAccount(deletePassword);
       setDeleteModalVisible(false);
       await logout();
-      router.replace('/auth/login');
     } catch (err) {
       showAlert(
         'Error al eliminar cuenta',
@@ -231,9 +231,8 @@ export default function ProfileScreen() {
     showConfirm(
       'Cerrar sesión',
       '¿Seguro que quieres salir de tu cuenta en BeerDex?',
-      async () => {
-        await logout();
-        router.replace('/auth/login');
+      () => {
+        void logout();
       },
       { confirmText: 'Cerrar sesión', destructive: true }
     );
@@ -404,21 +403,41 @@ export default function ProfileScreen() {
                 style={[styles.infoCard, SHADOWS.card]}
               >
                 <View style={styles.vitrinaHeader}>
-                  <View>
+                  <View style={styles.vitrinaTopActionsRow}>
+                    <Pressable
+                      onPress={() => setTab('vitrina')}
+                      style={[
+                        styles.vitrinaLinkBtn,
+                        { backgroundColor: theme.tintBg, borderColor: theme.border },
+                      ]}
+                    >
+                      <Text style={[styles.vitrinaLink, { color: theme.bright }]}>Ver todas</Text>
+                      <Ionicons name="chevron-forward" size={13} color={theme.bright} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => router.push('/treasury')}
+                      style={[
+                        styles.vitrinaLinkBtn,
+                        { backgroundColor: 'rgba(12, 9, 8, 0.7)', borderColor: theme.border },
+                      ]}
+                    >
+                      <Ionicons name="diamond-outline" size={13} color={theme.bright} />
+                      <Text style={[styles.vitrinaLink, { color: theme.bright }]}>Tesorería</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.vitrinaTitleBlock}>
                     <Text style={styles.vitrinaTitle}>Vitrina de Reliquias</Text>
                     <Text style={styles.vitrinaSub}>
-                      Toca cualquier hueco para exponer tus coleccionables
+                      Toca cualquier hueco para exponer tus reliquias activas ({profile.activeRelicsSummary?.activeCount ?? 0}/3)
                     </Text>
                   </View>
-                  <Pressable onPress={() => setTab('vitrina')}>
-                    <Text style={[styles.vitrinaLink, { color: theme.bright }]}>Ver todas</Text>
-                  </Pressable>
                 </View>
 
                 <View style={styles.vitrinaRow}>
                   {([0, 1, 2] as const).map((idx) => {
                     const relic = showcaseSlots[idx] ?? null;
                     const slotNum = (idx + 1) as 1 | 2 | 3;
+                    const relicLvl = relic?.relicPower?.level ?? 1;
                     return (
                       <Pressable
                         key={idx}
@@ -440,12 +459,32 @@ export default function ProfileScreen() {
                         >
                           {relic ? (
                             <>
-                              <View style={styles.vitrinaLightBar} />
-                              <RelicIcon previewKey={relic.previewKey} size={62} pedestal />
+                              <View style={styles.vitrinaSlotTopBar}>
+                                <View style={styles.vitrinaLightBar} />
+                                <View style={[styles.vitrinaLvBadge, { borderColor: theme.border }]}>
+                                  <Text style={[styles.vitrinaLvText, { color: theme.bright }]}>
+                                    Nv.{relicLvl}
+                                  </Text>
+                                </View>
+                              </View>
+                              <RelicIcon
+                                previewKey={relic.previewKey}
+                                size={56}
+                                pedestal
+                                level={relicLvl}
+                              />
                               <View style={styles.vitrinaPlaque}>
                                 <Text style={styles.vitrinaSlotName} numberOfLines={1}>
                                   {relic.name}
                                 </Text>
+                                {relic.relicPower?.shortTag ? (
+                                  <Text
+                                    style={[styles.vitrinaSlotPower, { color: theme.bright }]}
+                                    numberOfLines={1}
+                                  >
+                                    {relic.relicPower.shortTag}
+                                  </Text>
+                                ) : null}
                               </View>
                             </>
                           ) : (
@@ -818,55 +857,91 @@ export default function ProfileScreen() {
           ) : null}
 
           {tab === 'vitrina' ? (
-            <View style={styles.iconsGrid}>
-              {profile.cosmetics.relics.map((item) => (
-                <Pressable
-                  key={item.id}
-                  onPress={() => handleCosmeticPress(item)}
-                  style={styles.iconSlot}
-                >
-                  <LinearGradient
-                    colors={
-                      item.equipped
-                        ? GRADIENTS.unlocked
-                        : item.unlocked
-                        ? GRADIENTS.card
-                        : GRADIENTS.locked
-                    }
-                    style={[
-                      styles.iconCard,
-                      SHADOWS.card,
-                      !item.unlocked && styles.lockedCard,
-                      item.equipped && { borderColor: theme.border, borderWidth: 1.5 },
-                    ]}
-                  >
-                    <View style={styles.iconWrap}>
-                      <RelicIcon
-                        previewKey={item.previewKey}
-                        size={76}
-                        locked={!item.unlocked}
-                        pedestal
-                      />
-                      {!item.unlocked ? (
-                        <View style={styles.padlockBadge}>
-                          <Ionicons name="lock-closed" size={14} color={COLORS.text} />
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text
-                      style={[
-                        styles.iconName,
-                        !item.unlocked && styles.lockedText,
-                        item.equipped && { color: theme.bright },
-                      ]}
-                      numberOfLines={2}
+            <View style={{ gap: SPACING.md }}>
+              <Pressable
+                onPress={() => router.push('/treasury')}
+                style={[
+                  styles.treasuryBanner,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <Ionicons name="diamond" size={18} color={theme.bright} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.treasuryBannerTitle, { color: theme.bright }]}>
+                    Ir a Tesorería para mejorar niveles →
+                  </Text>
+                  <Text style={styles.treasuryBannerSub}>
+                    Sube tus reliquias del Nv. 1 al Nv. 5 y potencia tus multiplicadores
+                  </Text>
+                </View>
+              </Pressable>
+
+              <View style={styles.iconsGrid}>
+                {profile.cosmetics.relics.map((item) => {
+                  const relicLvl = item.relicPower?.level ?? 1;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      onPress={() => handleCosmeticPress(item)}
+                      style={styles.iconSlot}
                     >
-                      {item.name}
-                    </Text>
-                    {renderUnlockBadge(item)}
-                  </LinearGradient>
-                </Pressable>
-              ))}
+                      <LinearGradient
+                        colors={
+                          item.equipped
+                            ? GRADIENTS.unlocked
+                            : item.unlocked
+                            ? GRADIENTS.card
+                            : GRADIENTS.locked
+                        }
+                        style={[
+                          styles.iconCard,
+                          SHADOWS.card,
+                          !item.unlocked && styles.lockedCard,
+                          item.equipped && { borderColor: theme.border, borderWidth: 1.5 },
+                        ]}
+                      >
+                        <View style={styles.iconWrap}>
+                          <RelicIcon
+                            previewKey={item.previewKey}
+                            size={76}
+                            locked={!item.unlocked}
+                            pedestal
+                            level={item.unlocked ? relicLvl : undefined}
+                          />
+                          {!item.unlocked ? (
+                            <View style={styles.padlockBadge}>
+                              <Ionicons name="lock-closed" size={14} color={COLORS.text} />
+                            </View>
+                          ) : null}
+                        </View>
+                        <Text
+                          style={[
+                            styles.iconName,
+                            !item.unlocked && styles.lockedText,
+                            item.equipped && { color: theme.bright },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {item.name}
+                        </Text>
+                        {item.relicPower ? (
+                          <Text
+                            style={[
+                              styles.relicMiniMeta,
+                              { color: item.unlocked ? theme.bright : COLORS.textMuted },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {item.unlocked ? `Nv.${relicLvl} · ` : 'Nv.1 · '}
+                            {item.relicPower.shortTag}
+                          </Text>
+                        ) : null}
+                        {renderUnlockBadge(item)}
+                      </LinearGradient>
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
 
@@ -1247,10 +1322,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   vitrinaHeader: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: SPACING.xs + 2,
+    width: '100%',
+  },
+  vitrinaTopActionsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: SPACING.sm,
+    gap: 8,
+  },
+  vitrinaTitleBlock: {
+    width: '100%',
+    gap: 2,
   },
   vitrinaTitle: {
     color: COLORS.text,
@@ -1261,9 +1346,21 @@ const styles = StyleSheet.create({
   vitrinaSub: {
     color: COLORS.textSecondary,
     fontSize: 11.5,
+    lineHeight: 16,
+    flexShrink: 1,
+  },
+  vitrinaLinkBtn: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   vitrinaLink: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '800',
   },
   vitrinaRow: {
@@ -1272,7 +1369,7 @@ const styles = StyleSheet.create({
   },
   vitrinaSlot: {
     flex: 1,
-    minHeight: 124,
+    minHeight: 132,
     borderRadius: RADIUS.lg + 2,
     borderWidth: 1.25,
     borderColor: COLORS.borderStrong,
@@ -1283,16 +1380,34 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingTop: 10,
+    paddingHorizontal: 6,
+    paddingTop: 7,
     paddingBottom: 8,
-    gap: 6,
+    gap: 4,
+  },
+  vitrinaSlotTopBar: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
   },
   vitrinaLightBar: {
-    width: '55%',
+    flex: 1,
     height: 2,
     borderRadius: 99,
     backgroundColor: 'rgba(255, 215, 130, 0.55)',
+  },
+  vitrinaLvBadge: {
+    backgroundColor: 'rgba(12, 9, 8, 0.85)',
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  vitrinaLvText: {
+    fontSize: 9,
+    fontWeight: '900',
   },
   vitrinaPlaque: {
     width: '100%',
@@ -1300,12 +1415,40 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255, 208, 102, 0.25)',
     borderRadius: 6,
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     paddingVertical: 3,
+    gap: 1,
   },
   vitrinaSlotName: {
     color: COLORS.text,
     fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  vitrinaSlotPower: {
+    fontSize: 9,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  treasuryBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm + 2,
+    borderWidth: 1,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.md,
+  },
+  treasuryBannerTitle: {
+    fontFamily: FONTS.display,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  treasuryBannerSub: {
+    color: COLORS.textSecondary,
+    fontSize: 11.5,
+  },
+  relicMiniMeta: {
+    fontSize: 10.5,
     fontWeight: '800',
     textAlign: 'center',
   },

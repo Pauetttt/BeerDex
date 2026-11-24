@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -61,6 +61,7 @@ const TYPE_LABEL: Record<ShopItem['itemType'], string> = {
 };
 
 export default function ShopScreen() {
+  const router = useRouter();
   const { width } = useWindowDimensions();
   const { user, applyMeProfile, refreshMe } = useAuth();
   const { showAlert } = useAppAlert();
@@ -203,7 +204,14 @@ export default function ShopScreen() {
     }
 
     if (item.itemType === 'relic') {
-      return <RelicIcon previewKey={item.previewKey} size={84} pedestal />;
+      return (
+        <RelicIcon
+          previewKey={item.previewKey}
+          size={84}
+          pedestal
+          level={item.owned ? item.relicPower?.level : undefined}
+        />
+      );
     }
 
     if (item.itemType === 'title') {
@@ -322,6 +330,19 @@ export default function ShopScreen() {
               </View>
             </View>
           </View>
+          {(data?.shopDiscountPct ?? 0) > 0 ? (
+            <View
+              style={[
+                styles.discountBanner,
+                { backgroundColor: theme.tintBg, borderColor: theme.border },
+              ]}
+            >
+              <Ionicons name="key" size={14} color={theme.bright} />
+              <Text style={[styles.discountBannerText, { color: theme.bright }]}>
+                Llave de La Bodega activa: -{data?.shopDiscountPct}% en cosméticos
+              </Text>
+            </View>
+          ) : null}
         </LinearGradient>
 
         {/* Filtros por categoría */}
@@ -362,6 +383,10 @@ export default function ShopScreen() {
           {visibleItems.map((item) => {
             const canAfford = balance >= item.priceChapas;
             const isEquipping = equippingId === `${item.itemType}-${item.id}`;
+            const hasDiscount =
+              (item.discountPct ?? 0) > 0 &&
+              typeof item.basePriceChapas === 'number' &&
+              item.basePriceChapas > item.priceChapas;
 
             return (
               <View
@@ -403,6 +428,17 @@ export default function ShopScreen() {
                           {item.equipped ? 'Equipado' : 'En propiedad'}
                         </Text>
                       </View>
+                    ) : hasDiscount ? (
+                      <View
+                        style={[
+                          styles.discountTagBadge,
+                          { backgroundColor: theme.tintBg, borderColor: theme.border },
+                        ]}
+                      >
+                        <Text style={[styles.discountTagText, { color: theme.bright }]}>
+                          -{item.discountPct}%
+                        </Text>
+                      </View>
                     ) : null}
                   </View>
 
@@ -415,45 +451,77 @@ export default function ShopScreen() {
                     <Text style={styles.itemDesc} numberOfLines={2}>
                       {item.description}
                     </Text>
+                    {item.itemType === 'relic' && item.relicPower ? (
+                      <View
+                        style={[
+                          styles.relicPowerBadge,
+                          { backgroundColor: theme.tintBg, borderColor: theme.border },
+                        ]}
+                      >
+                        <Ionicons name="flash" size={11} color={theme.bright} />
+                        <Text
+                          style={[styles.relicPowerText, { color: theme.bright }]}
+                          numberOfLines={1}
+                        >
+                          {item.relicPower.shortTag} · Nv.{item.owned ? item.relicPower.level : 1}→5
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
 
                   <View style={styles.actionArea}>
                     {item.owned ? (
-                      <Pressable
-                        onPress={() => handleEquipItem(item)}
-                        disabled={(item.equipped && item.itemType !== 'relic') || isEquipping}
-                        style={[
-                          styles.equipBtn,
-                          item.equipped && item.itemType !== 'relic'
-                            ? styles.equippedDoneBtn
-                            : {
-                                backgroundColor: theme.tintBg,
-                                borderColor: theme.border,
-                              },
-                        ]}
-                      >
-                        {isEquipping ? (
-                          <ActivityIndicator size="small" color={theme.bright} />
-                        ) : (
-                          <Text
+                      <View style={styles.ownedActionsCol}>
+                        <Pressable
+                          onPress={() => handleEquipItem(item)}
+                          disabled={(item.equipped && item.itemType !== 'relic') || isEquipping}
+                          style={[
+                            styles.equipBtn,
+                            item.equipped && item.itemType !== 'relic'
+                              ? styles.equippedDoneBtn
+                              : {
+                                  backgroundColor: theme.tintBg,
+                                  borderColor: theme.border,
+                                },
+                          ]}
+                        >
+                          {isEquipping ? (
+                            <ActivityIndicator size="small" color={theme.bright} />
+                          ) : (
+                            <Text
+                              style={[
+                                styles.equipBtnText,
+                                {
+                                  color:
+                                    item.equipped && item.itemType !== 'relic'
+                                      ? COLORS.success
+                                      : theme.bright,
+                                },
+                              ]}
+                            >
+                              {item.equipped
+                                ? item.itemType === 'relic'
+                                  ? 'Cambiar hueco'
+                                  : 'Equipado ✓'
+                                : 'Equipar'}
+                            </Text>
+                          )}
+                        </Pressable>
+                        {item.itemType === 'relic' ? (
+                          <Pressable
+                            onPress={() => router.push('/treasury')}
                             style={[
-                              styles.equipBtnText,
-                              {
-                                color:
-                                  item.equipped && item.itemType !== 'relic'
-                                    ? COLORS.success
-                                    : theme.bright,
-                              },
+                              styles.upgradeLinkBtn,
+                              { borderColor: theme.border },
                             ]}
                           >
-                            {item.equipped
-                              ? item.itemType === 'relic'
-                                ? 'Cambiar hueco'
-                                : 'Equipado ✓'
-                              : 'Equipar'}
-                          </Text>
-                        )}
-                      </Pressable>
+                            <Ionicons name="arrow-up-circle-outline" size={13} color={theme.bright} />
+                            <Text style={[styles.upgradeLinkText, { color: theme.bright }]}>
+                              Mejorar en Tesorería
+                            </Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
                     ) : (
                       <Pressable
                         onPress={() => handleOpenBuy(item)}
@@ -470,6 +538,11 @@ export default function ShopScreen() {
                           style={styles.buyBtn}
                         >
                           <ChapaCoinIcon size={15} />
+                          {hasDiscount ? (
+                            <Text style={styles.oldPriceText} numberOfLines={1}>
+                              {item.basePriceChapas?.toLocaleString('es-ES')}
+                            </Text>
+                          ) : null}
                           <Text
                             style={[
                               styles.buyBtnText,
@@ -848,8 +921,72 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
+  oldPriceText: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '700',
+    textDecorationLine: 'line-through',
+  },
   buyBtnTextMuted: {
     color: COLORS.textSecondary,
+  },
+  discountBanner: {
+    marginTop: SPACING.sm + 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  discountBannerText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  discountTagBadge: {
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+  },
+  discountTagText: {
+    fontSize: 9.5,
+    fontWeight: '900',
+  },
+  relicPowerBadge: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  relicPowerText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  ownedActionsCol: {
+    gap: 6,
+  },
+  upgradeLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(12, 9, 8, 0.45)',
+  },
+  upgradeLinkText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   equipBtn: {
     borderRadius: RADIUS.md,

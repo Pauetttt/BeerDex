@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, ne, sql } from 'drizzle-orm';
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -20,6 +20,10 @@ import {
   verifyBeerFrameWithGemini,
   verifyScanVerificationToken,
 } from '../services/antiCheatService';
+import {
+  calculateBeerRegistrationChapas,
+  getActiveUserRelics,
+} from '../services/relicService';
 import { uploadBeerPhoto } from '../services/storageService';
 import { asyncHandler, HttpError } from '../utils/httpError';
 
@@ -1052,8 +1056,37 @@ router.post(
       }
     }
 
+    const startOfTodayUtc = new Date();
+    startOfTodayUtc.setUTCHours(0, 0, 0, 0);
+
     const baseChapas = 10;
-    const directChapas = baseChapas + completedBrandBonus;
+    const [priorTodayRows, activeRelics] = await Promise.all([
+      db
+        .select({ id: schema.userBeers.id })
+        .from(schema.userBeers)
+        .where(
+          and(
+            eq(schema.userBeers.userId, userId),
+            gte(schema.userBeers.registeredAt, startOfTodayUtc),
+            ne(schema.userBeers.id, created.id)
+          )
+        )
+        .limit(1),
+      getActiveUserRelics(db, userId),
+    ]);
+
+    const isFirstBeerToday = priorTodayRows.length === 0;
+    const relicCalc = calculateBeerRegistrationChapas({
+      baseChapas,
+      completedBrandBase: completedBrandBonus,
+      beer,
+      rating,
+      scannedViaPack: Boolean(scannedViaPack),
+      isFirstBeerToday,
+      activeRelics,
+    });
+
+    const directChapas = relicCalc.totalDirectChapas;
     await db
       .update(schema.users)
       .set({
@@ -1093,6 +1126,8 @@ router.post(
       chapasEarned: directChapas + achievementChapas,
       baseChapas,
       completedBrandBonus,
+      relicBonusChapas: relicCalc.relicBonusChapas,
+      relicBonuses: relicCalc.appliedBonuses,
       achievementChapas,
       totalChapas: updatedUser?.chapas ?? directChapas + achievementChapas,
     });

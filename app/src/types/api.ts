@@ -27,6 +27,49 @@ export interface TitleItem {
   unlockAchievementName: string | null;
 }
 
+export type RelicTier = 'merit' | 'common' | 'epic' | 'legendary';
+
+export interface RelicLevelEntry {
+  level: number;
+  value: number;
+  shortTag: string;
+  effectSummary: string;
+  upgradeCost: number | null;
+}
+
+export interface RelicPower {
+  tier: RelicTier;
+  tierLabel: string;
+  level: number;
+  maxLevel: number;
+  shortTag: string;
+  effectSummary: string;
+  nextLevelEffectSummary: string | null;
+  nextUpgradeCost: number | null;
+  requiresFullShowcase: boolean;
+  levels: RelicLevelEntry[];
+}
+
+export interface ActiveRelicEffectItem {
+  slot: 1 | 2 | 3;
+  relicId: number;
+  code: string;
+  name: string;
+  tier: RelicTier;
+  level: number;
+  shortTag: string;
+  effectSummary: string;
+  active: boolean;
+}
+
+export interface ActiveRelicsSummary {
+  activeCount: number;
+  maxSlots: number;
+  fullShowcaseActive: boolean;
+  shopDiscountPct: number;
+  effects: ActiveRelicEffectItem[];
+}
+
 export interface CosmeticItem {
   id: number;
   code: string;
@@ -41,6 +84,7 @@ export interface CosmeticItem {
   unlockAchievementId: number | null;
   unlockAchievementName: string | null;
   metadata: Record<string, unknown> | null;
+  relicPower?: RelicPower | null;
 }
 
 export interface ShopItem {
@@ -51,13 +95,17 @@ export interface ShopItem {
   description: string;
   previewKey: string;
   priceChapas: number;
+  basePriceChapas?: number;
+  discountPct?: number;
   owned: boolean;
   equipped: boolean;
   metadata: Record<string, unknown> | null;
+  relicPower?: RelicPower | null;
 }
 
 export interface ShopResponse {
   chapas: number;
+  shopDiscountPct?: number;
   categories: {
     icons: ShopItem[];
     titles: ShopItem[];
@@ -71,6 +119,14 @@ export interface ShopResponse {
 export interface ShopBuyResponse {
   newBalance: number;
   item: ShopItem;
+}
+
+export interface RelicUpgradeResponse {
+  newBalance: number;
+  relicId: number;
+  newLevel: number;
+  upgradeCostPaid: number;
+  profile: MeProfileResponse;
 }
 
 export interface AuthUser {
@@ -126,6 +182,7 @@ export interface MeProfileResponse {
     achievementsUnlocked: number;
     achievementsTotal: number;
   };
+  activeRelicsSummary?: ActiveRelicsSummary;
   icons: IconItem[];
   titles: TitleItem[];
   cosmetics: {
@@ -231,6 +288,14 @@ export interface RegisterBeerResponse {
   chapasEarned?: number;
   baseChapas?: number;
   completedBrandBonus?: number;
+  relicBonusChapas?: number;
+  relicBonuses?: Array<{
+    code: string;
+    name: string;
+    level: number;
+    chapasAdded: number;
+    label: string;
+  }>;
   achievementChapas?: number;
   totalChapas?: number;
 }

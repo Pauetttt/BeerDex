@@ -29,16 +29,46 @@ const RELIC_ASSETS: Record<string, ImageSourcePropType> = {
   'relic://relic-royal-crown': require('../../assets/relics/relic-royal-crown.png'),
 };
 
+export const RELIC_LEVEL_COLORS: Record<number, string> = {
+  1: '#CD7F32',
+  2: '#CBD5E1',
+  3: '#FFD066',
+  4: '#67E8F9',
+  5: '#E879F9',
+};
+
+const LEVEL_GLOW_RGBA: Record<number, string> = {
+  1: 'rgba(205, 127, 50, 0.38)',
+  2: 'rgba(203, 213, 225, 0.38)',
+  3: 'rgba(255, 208, 102, 0.45)',
+  4: 'rgba(103, 232, 249, 0.45)',
+  5: 'rgba(232, 121, 249, 0.5)',
+};
+
 interface Props {
   previewKey?: string | null;
   size?: number;
   locked?: boolean;
   pedestal?: boolean;
+  level?: number;
 }
 
-export function RelicIcon({ previewKey, size = 48, locked = false, pedestal = false }: Props) {
+export function RelicIcon({
+  previewKey,
+  size = 48,
+  locked = false,
+  pedestal = false,
+  level,
+}: Props) {
   const source =
     (previewKey && RELIC_ASSETS[previewKey]) || RELIC_ASSETS['relic://relic-cap-1900'];
+
+  const clampedLevel =
+    typeof level === 'number' && Number.isFinite(level)
+      ? Math.max(1, Math.min(5, Math.trunc(level)))
+      : 1;
+  const levelColor = level ? RELIC_LEVEL_COLORS[clampedLevel] : 'rgba(255, 208, 102, 0.34)';
+  const glowColor = level ? LEVEL_GLOW_RGBA[clampedLevel] : 'rgba(255, 220, 140, 0.28)';
 
   const webFilter: ImageStyle | undefined =
     locked && Platform.OS === 'web'
@@ -48,8 +78,7 @@ export function RelicIcon({ previewKey, size = 48, locked = false, pedestal = fa
   const pedestalGlow: ViewStyle | undefined =
     pedestal && !locked && Platform.OS === 'web'
       ? ({
-          boxShadow:
-            '0 6px 18px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 220, 140, 0.28)',
+          boxShadow: `0 6px 18px rgba(0, 0, 0, 0.65), 0 0 12px ${glowColor}, inset 0 1px 0 ${glowColor}`,
         } as unknown as ViewStyle)
       : undefined;
 
@@ -64,8 +93,8 @@ export function RelicIcon({ previewKey, size = 48, locked = false, pedestal = fa
           borderRadius: cornerRadius,
           overflow: 'hidden',
           backgroundColor: '#090706',
-          borderWidth: 1,
-          borderColor: locked ? COLORS.lockedBorder : 'rgba(255, 208, 102, 0.34)',
+          borderWidth: level && !locked && clampedLevel >= 3 ? 1.5 : 1,
+          borderColor: locked ? COLORS.lockedBorder : levelColor,
         },
         pedestalGlow,
         locked && styles.locked,

@@ -5,6 +5,7 @@ import { getDb, schema } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware';
 import { evaluateAchievements } from '../services/achievementEngine';
 import { getUserAchievementsList, parseCosmeticMetadata } from '../services/profileService';
+import { buildRelicPowerDto, clampRelicLevel } from '../services/relicService';
 import { asyncHandler, HttpError, isUuid } from '../utils/httpError';
 
 const router = Router();
@@ -579,11 +580,15 @@ router.get(
       newlyUnlocked = await evaluateAchievements(db, viewerId);
     }
 
-    const [iconRows, titleRows, allCosmetics, targetBeers, viewerBeers, totalBeers, achData] =
+    const [iconRows, titleRows, allCosmetics, targetOwnedCosmetics, targetBeers, viewerBeers, totalBeers, achData] =
       await Promise.all([
         db.select().from(schema.icons).where(eq(schema.icons.id, targetUser.equippedIconId)),
         db.select().from(schema.titles).where(eq(schema.titles.id, targetUser.equippedTitleId)),
         db.select().from(schema.cosmetics),
+        db
+          .select({ cosmeticId: schema.userCosmetics.cosmeticId, level: schema.userCosmetics.level })
+          .from(schema.userCosmetics)
+          .where(eq(schema.userCosmetics.userId, targetUserId)),
         db
           .select({
             beerId: schema.beers.id,
@@ -604,6 +609,9 @@ router.get(
       ]);
 
     const cosmeticMap = new Map(allCosmetics.map((c) => [c.id, c]));
+    const targetLevelMap = new Map(
+      targetOwnedCosmetics.map((r) => [r.cosmeticId, clampRelicLevel(r.level)])
+    );
     const serializeCosmetic = (c: typeof allCosmetics[number] | undefined) =>
       c
         ? {
@@ -620,6 +628,10 @@ router.get(
             unlockAchievementId: c.unlockAchievementId,
             unlockAchievementName: null,
             metadata: parseCosmeticMetadata(c.metadataJson),
+            relicPower:
+              c.type === 'relic'
+                ? buildRelicPowerDto(c.code, targetLevelMap.get(c.id) ?? 1)
+                : null,
           }
         : null;
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'beerdex-pwa-v10';
+const CACHE_NAME = 'beerdex-pwa-v12';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',

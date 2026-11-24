@@ -1,6 +1,13 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
 import { ensureUserAchievements, evaluateAchievements } from './achievementEngine';
+import {
+  ActiveRelicsSummaryDto,
+  buildActiveRelicsSummary,
+  buildRelicPowerDto,
+  clampRelicLevel,
+  RelicPowerDto,
+} from './relicService';
 
 export interface CosmeticDto {
   id: number;
@@ -16,6 +23,7 @@ export interface CosmeticDto {
   unlockAchievementId: number | null;
   unlockAchievementName: string | null;
   metadata: Record<string, unknown> | null;
+  relicPower?: RelicPowerDto | null;
 }
 
 export interface AchievementDto {
@@ -256,7 +264,7 @@ export async function getFullUserProfile(
       .from(schema.userTitles)
       .where(eq(schema.userTitles.userId, userId)),
     db
-      .select({ cosmeticId: schema.userCosmetics.cosmeticId })
+      .select({ cosmeticId: schema.userCosmetics.cosmeticId, level: schema.userCosmetics.level })
       .from(schema.userCosmetics)
       .where(eq(schema.userCosmetics.userId, userId)),
     db
@@ -273,6 +281,9 @@ export async function getFullUserProfile(
   const ownedIconSet = new Set(userOwnedIcons.map((r) => r.iconId));
   const ownedTitleSet = new Set(userOwnedTitles.map((r) => r.titleId));
   const ownedCosmeticSet = new Set(userOwnedCosmetics.map((r) => r.cosmeticId));
+  const ownedCosmeticLevelMap = new Map(
+    userOwnedCosmetics.map((r) => [r.cosmeticId, clampRelicLevel(r.level)])
+  );
 
   const icons = allIcons.map((icon) => {
     const unlockAch = icon.unlockAchievementId
@@ -361,6 +372,10 @@ export async function getFullUserProfile(
       unlockAchievementId: cos.unlockAchievementId,
       unlockAchievementName: unlockAch?.name ?? null,
       metadata: parseCosmeticMetadata(cos.metadataJson),
+      relicPower:
+        cos.type === 'relic'
+          ? buildRelicPowerDto(cos.code, ownedCosmeticLevelMap.get(cos.id) ?? 1)
+          : null,
     };
   });
 
@@ -379,6 +394,25 @@ export async function getFullUserProfile(
   const showcaseRelics = showcaseIds.map((id) =>
     id ? cosmeticById.get(id) ?? null : null
   );
+
+  const seenActiveRelicIds = new Set<number>();
+  const activeRelicInstances = showcaseIds
+    .map((id, idx) => {
+      if (!id || seenActiveRelicIds.has(id)) return null;
+      const cos = cosmeticById.get(id);
+      if (!cos || cos.type !== 'relic' || !cos.unlocked) return null;
+      seenActiveRelicIds.add(cos.id);
+      return {
+        slot: (idx + 1) as 1 | 2 | 3,
+        id: cos.id,
+        code: cos.code,
+        name: cos.name,
+        level: cos.relicPower?.level ?? 1,
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+  const activeRelicsSummary: ActiveRelicsSummaryDto =
+    buildActiveRelicsSummary(activeRelicInstances);
 
   return {
     user: {
@@ -407,6 +441,7 @@ export async function getFullUserProfile(
       achievementsUnlocked: unlockedAchSet.size,
       achievementsTotal: allAchievements.length,
     },
+    activeRelicsSummary,
     icons,
     titles,
     cosmetics: {

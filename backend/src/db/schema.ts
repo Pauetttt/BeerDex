@@ -301,9 +301,13 @@ export const userCosmetics = pgTable(
       .notNull()
       .references(() => cosmetics.id, { onDelete: 'cascade' }),
     source: varchar('source', { length: 20 }).default('shop').notNull(),
+    level: integer('level').default(1).notNull(),
     acquiredAt: timestamp('acquired_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.cosmeticId] })]
+  (table) => [
+    primaryKey({ columns: [table.userId, table.cosmeticId] }),
+    check('user_cosmetics_level_check', sql`${table.level} >= 1 AND ${table.level} <= 5`),
+  ]
 );
 
 export const userIcons = pgTable(
