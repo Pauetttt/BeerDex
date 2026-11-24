@@ -472,7 +472,7 @@ export function WebBarcodeScanner({
         const msg = isDenied
           ? getPermissionErrorMessage(mode)
           : mode === 'barcode'
-          ? 'No pudimos abrir la cámara en directo. Pulsa "Reiniciar cámara", usa escanear con foto o escribe el EAN abajo.'
+          ? 'No pudimos abrir la cámara en directo. Pulsa "Reiniciar cámara" o usa el botón de escanear código con foto.'
           : 'No pudimos abrir la cámara en directo. Usa el botón de hacer foto con tu dispositivo.';
         setCameraError(msg);
         onErrorRef.current?.(msg);
@@ -801,7 +801,7 @@ export function WebBarcodeScanner({
       }
 
       setPhotoDecodeHint(
-        'No detectamos un código EAN/UPC de envase o pack nítido en esa foto. Acércate más al código con buena luz o escríbelo abajo.'
+        'No detectamos un código EAN/UPC de envase o pack nítido en esa foto. Acércate más al código con buena luz e inténtalo de nuevo.'
       );
     } catch {
       setPhotoDecodeHint('No se pudo procesar la foto seleccionada.');

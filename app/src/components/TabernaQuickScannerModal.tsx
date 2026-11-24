@@ -93,7 +93,6 @@ export function TabernaQuickScannerModal({
 
   const [step, setStep] = useState<ModalStep>('scan');
   const [torchOn, setTorchOn] = useState(false);
-  const [manualCode, setManualCode] = useState('');
   const [scanResult, setScanResult] = useState<TabernaScanResponse | null>(null);
   const [varietyOptions, setVarietyOptions] = useState<BarcodeLookupBeerItem[]>([]);
   const [varietySearch, setVarietySearch] = useState('');
@@ -103,7 +102,6 @@ export function TabernaQuickScannerModal({
   const resetScanner = useCallback(() => {
     scanLockRef.current = false;
     setStep('scan');
-    setManualCode('');
     setScanResult(null);
     setVarietyOptions([]);
     setVarietySearch('');
@@ -380,29 +378,6 @@ export function TabernaQuickScannerModal({
                   </Pressable>
                 </View>
               )}
-
-              <View style={styles.manualBox}>
-                <Text style={styles.manualLabel}>
-                  ¿Prefieres introducir el código manualmente?
-                </Text>
-                <View style={styles.manualRow}>
-                  <TextInput
-                    value={manualCode}
-                    onChangeText={setManualCode}
-                    placeholder="Ej: 8410521001011"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="number-pad"
-                    maxLength={14}
-                    onSubmitEditing={() => void submitScan({ code: manualCode })}
-                    style={styles.manualInput}
-                  />
-                  <Pressable onPress={() => void submitScan({ code: manualCode })}>
-                    <LinearGradient colors={theme.gradientBtn} style={styles.manualBtn}>
-                      <Text style={styles.manualBtnText}>Validar</Text>
-                    </LinearGradient>
-                  </Pressable>
-                </View>
-              </View>
             </View>
           ) : null}
 
@@ -430,7 +405,7 @@ export function TabernaQuickScannerModal({
                   onChangeText={setVarietySearch}
                   placeholder="Filtrar variedad..."
                   placeholderTextColor={COLORS.textMuted}
-                  style={styles.manualInput}
+                  style={styles.varietySearchInput}
                 />
               ) : null}
               <View style={styles.varietyList}>
@@ -616,22 +591,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  manualBox: {
-    gap: SPACING.sm,
-    paddingTop: SPACING.xs,
-  },
-  manualLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  manualRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    alignItems: 'center',
-  },
-  manualInput: {
-    flex: 1,
+  varietySearchInput: {
     backgroundColor: COLORS.elevated,
     borderWidth: 1,
     borderColor: COLORS.borderStrong,
@@ -640,17 +600,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: COLORS.text,
     fontSize: 14.5,
-  },
-  manualBtn: {
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: 11,
-  },
-  manualBtnText: {
-    color: COLORS.bg,
-    fontFamily: FONTS.display,
-    fontWeight: '900',
-    fontSize: 13.5,
   },
   statusCard: {
     backgroundColor: COLORS.surface,

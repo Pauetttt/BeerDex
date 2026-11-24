@@ -117,7 +117,6 @@ export default function ScanRegisterScreen() {
 
   const [step, setStep] = useState<ScanStep>('scan');
   const [torchOn, setTorchOn] = useState(false);
-  const [manualBarcode, setManualBarcode] = useState('');
   const [lastScannedCode, setLastScannedCode] = useState('');
   const [scannedViaPack, setScannedViaPack] = useState(false);
   const [barcodeNotFound, setBarcodeNotFound] = useState(false);
@@ -528,29 +527,6 @@ export default function ScanRegisterScreen() {
                 </Pressable>
               </View>
             )}
-
-            <View style={styles.manualBox}>
-              <Text style={styles.manualLabel}>
-                ¿Sin cámara o código difícil de leer? Introdúcelo aquí:
-              </Text>
-              <View style={styles.manualRow}>
-                <TextInput
-                  value={manualBarcode}
-                  onChangeText={setManualBarcode}
-                  placeholder="Ej: 8410521001011"
-                  placeholderTextColor={COLORS.textMuted}
-                  keyboardType="number-pad"
-                  maxLength={14}
-                  style={styles.manualInput}
-                />
-                <Pressable
-                  onPress={() => validateCode(manualBarcode, false)}
-                  style={styles.manualBtn}
-                >
-                  <Text style={styles.manualBtnText}>Validar</Text>
-                </Pressable>
-              </View>
-            </View>
           </View>
         ) : null}
 
@@ -1119,45 +1095,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 19,
-  },
-  manualBox: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: SPACING.md,
-    gap: 8,
-  },
-  manualLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  manualRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  manualInput: {
-    flex: 1,
-    backgroundColor: COLORS.elevated,
-    borderWidth: 1,
-    borderColor: COLORS.borderStrong,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 10,
-    color: COLORS.text,
-    fontSize: 14,
-  },
-  manualBtn: {
-    backgroundColor: COLORS.elevated,
-    borderWidth: 1,
-    borderColor: COLORS.amber,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-  },
-  manualBtnText: {
-    color: COLORS.amberBright,
-    fontWeight: '800',
-    fontSize: 13,
   },
   statusCard: {
     backgroundColor: COLORS.surface,
