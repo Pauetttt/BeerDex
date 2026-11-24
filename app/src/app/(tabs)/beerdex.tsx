@@ -279,7 +279,18 @@ export default function BeerDexScreen() {
 
         return { brand, filteredBeers };
       })
-      .filter((entry) => !hasActiveSearchOrAttrFilter || entry.filteredBeers.length > 0);
+      .filter((entry) => !hasActiveSearchOrAttrFilter || entry.filteredBeers.length > 0)
+      .sort((a, b) => {
+        const pctA = a.brand.totalCount > 0 ? a.brand.registeredCount / a.brand.totalCount : 0;
+        const pctB = b.brand.totalCount > 0 ? b.brand.registeredCount / b.brand.totalCount : 0;
+        if (pctB !== pctA) {
+          return pctB - pctA;
+        }
+        if (b.brand.registeredCount !== a.brand.registeredCount) {
+          return b.brand.registeredCount - a.brand.registeredCount;
+        }
+        return a.brand.id - b.brand.id;
+      });
   }, [data, filter, formatFilter, hasActiveSearchOrAttrFilter, searchQuery, styleFilter]);
 
   const listHeader = useMemo(
