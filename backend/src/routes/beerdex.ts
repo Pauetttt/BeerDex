@@ -297,10 +297,8 @@ router.post(
     const db = getDb();
     const userId = req.userId!;
 
-    const [beer] = await db
-      .select()
-      .from(schema.beers)
-      .where(eq(schema.beers.id, beerId));
+    const allBeers = await getCachedBeers(db);
+    const beer = allBeers.find((b) => b.id === beerId);
 
     if (!beer) {
       throw new HttpError(404, 'La cerveza indicada no existe en el catálogo.');
@@ -357,25 +355,23 @@ router.post(
       .returning();
 
     // Comprobar si completó el 100 % de la marca para bonus idempotente de +50 Chapas
-    const [brandTotalRows, userBrandRows] = await Promise.all([
-      db
-        .select({ id: schema.beers.id })
-        .from(schema.beers)
-        .where(eq(schema.beers.brandId, beer.brandId)),
-      db
-        .select({ id: schema.userBeers.id })
-        .from(schema.userBeers)
-        .innerJoin(schema.beers, eq(schema.userBeers.beerId, schema.beers.id))
-        .where(
-          and(
-            eq(schema.userBeers.userId, userId),
-            eq(schema.beers.brandId, beer.brandId)
-          )
-        ),
-    ]);
+    const brandTotalCount = allBeers.reduce(
+      (sum, b) => sum + (b.brandId === beer.brandId ? 1 : 0),
+      0
+    );
+    const userBrandRows = await db
+      .select({ id: schema.userBeers.id })
+      .from(schema.userBeers)
+      .innerJoin(schema.beers, eq(schema.userBeers.beerId, schema.beers.id))
+      .where(
+        and(
+          eq(schema.userBeers.userId, userId),
+          eq(schema.beers.brandId, beer.brandId)
+        )
+      );
 
     const brandCompletedNow =
-      brandTotalRows.length > 0 && userBrandRows.length >= brandTotalRows.length;
+      brandTotalCount > 0 && userBrandRows.length >= brandTotalCount;
 
     let completedBrandBonus = 0;
     if (brandCompletedNow) {
@@ -428,7 +424,7 @@ router.post(
       })
       .where(eq(schema.users.id, userId));
 
-    const newlyUnlocked = await evaluateAchievements(db, userId);
+    const newlyUnlocked = await evaluateAchievements(db, userId, { activeRelics });
     const tabernaHook = await onBeerRegisteredForTabernas(db, userId, beer.id);
 
     const unlockedMap = new Map(newlyUnlocked.map((a) => [a.id, a]));
@@ -452,9 +448,13 @@ router.post(
 
     // Solo reevaluar amigos (Rivalidad Sana) si el usuario acaba de completar el 100 % de esta marca
     if (brandCompletedNow) {
-      const friendIds = await getAcceptedFriendIds(db, userId);
-      if (friendIds.length > 0) {
-        await Promise.all(friendIds.map((fid) => evaluateAchievements(db, fid)));
+      try {
+        const friendIds = await getAcceptedFriendIds(db, userId);
+        if (friendIds.length > 0) {
+          await Promise.all(friendIds.map((fid) => evaluateAchievements(db, fid)));
+        }
+      } catch (err) {
+        console.error('[BeerDex] Error reevaluando logros de amigos:', err);
       }
     }
 

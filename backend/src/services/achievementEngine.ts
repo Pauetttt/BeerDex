@@ -8,6 +8,7 @@ import {
   getCachedTitles,
 } from './catalogCache';
 import {
+  ActiveRelicInstance,
   calculateAchievementRewardChapas,
   getActiveUserRelics,
 } from './relicService';
@@ -114,7 +115,8 @@ function normalizeCountry(country: string): string {
 
 export async function evaluateAchievements(
   db: AppDatabase,
-  userId: string
+  userId: string,
+  options?: { activeRelics?: ActiveRelicInstance[] }
 ): Promise<NewlyUnlockedAchievement[]> {
   const [
     userRows,
@@ -477,13 +479,19 @@ export async function evaluateAchievements(
   const newlyUnlocked: NewlyUnlockedAchievement[] = [];
   let unlocked99Count = 0;
   let totalChapasAwarded = 0;
-  const activeRelics = await getActiveUserRelics(db, userId);
+  const activeRelics = options?.activeRelics ?? (await getActiveUserRelics(db, userId));
 
   // Sólo los 99 logros originales cuentan para «Dios de la BeerDex» (#100).
   // Los logros ≥101 (Tabernas y Hermandad) los gestiona tabernaService.
   const first99 = allAchievements.filter((a) => a.id < 100).sort((a, b) => a.id - b.id);
   const ultimateAch = allAchievements.find((a) => a.id === 100);
-  const pendingUpdates: Array<Promise<unknown>> = [];
+  const rowsToUpsert: Array<{
+    userId: string;
+    achievementId: number;
+    currentProgress: number;
+    unlocked: boolean;
+    unlockedAt: Date | null;
+  }> = [];
 
   for (const ach of first99) {
     const existing = existingByAchId.get(ach.id);
@@ -508,21 +516,13 @@ export async function evaluateAchievements(
       existing.currentProgress !== clampedProgress ||
       existing.unlocked !== isNowUnlocked
     ) {
-      pendingUpdates.push(
-        db
-          .update(schema.userAchievements)
-          .set({
-            currentProgress: clampedProgress,
-            unlocked: isNowUnlocked,
-            unlockedAt,
-          })
-          .where(
-            and(
-              eq(schema.userAchievements.userId, userId),
-              eq(schema.userAchievements.achievementId, ach.id)
-            )
-          )
-      );
+      rowsToUpsert.push({
+        userId,
+        achievementId: ach.id,
+        currentProgress: clampedProgress,
+        unlocked: isNowUnlocked,
+        unlockedAt,
+      });
     }
 
     if (!wasUnlocked && isNowUnlocked) {
@@ -578,21 +578,13 @@ export async function evaluateAchievements(
       existing.currentProgress !== clampedProgress ||
       existing.unlocked !== isNowUnlocked
     ) {
-      pendingUpdates.push(
-        db
-          .update(schema.userAchievements)
-          .set({
-            currentProgress: clampedProgress,
-            unlocked: isNowUnlocked,
-            unlockedAt,
-          })
-          .where(
-            and(
-              eq(schema.userAchievements.userId, userId),
-              eq(schema.userAchievements.achievementId, 100)
-            )
-          )
-      );
+      rowsToUpsert.push({
+        userId,
+        achievementId: 100,
+        currentProgress: clampedProgress,
+        unlocked: isNowUnlocked,
+        unlockedAt,
+      });
     }
 
     if (!wasUnlocked && isNowUnlocked) {
@@ -634,8 +626,18 @@ export async function evaluateAchievements(
     }
   }
 
-  if (pendingUpdates.length > 0) {
-    await Promise.all(pendingUpdates);
+  if (rowsToUpsert.length > 0) {
+    await db
+      .insert(schema.userAchievements)
+      .values(rowsToUpsert)
+      .onConflictDoUpdate({
+        target: [schema.userAchievements.userId, schema.userAchievements.achievementId],
+        set: {
+          currentProgress: sql`CASE WHEN ${schema.userAchievements.unlocked} THEN ${schema.userAchievements.currentProgress} ELSE excluded.current_progress END`,
+          unlocked: sql`${schema.userAchievements.unlocked} OR excluded.unlocked`,
+          unlockedAt: sql`COALESCE(${schema.userAchievements.unlockedAt}, excluded.unlocked_at)`,
+        },
+      });
   }
 
   if (totalChapasAwarded > 0) {
@@ -712,6 +714,13 @@ export async function applyAchievementProgressUpdates(
   const now = new Date();
   const newlyUnlocked: NewlyUnlockedAchievement[] = [];
   let totalChapasAwarded = 0;
+  const progressRowsToUpsert: Array<{
+    userId: string;
+    achievementId: number;
+    currentProgress: number;
+    unlocked: boolean;
+    unlockedAt: Date | null;
+  }> = [];
 
   for (const ach of targetAchievements.sort((a, b) => a.id - b.id)) {
     const existing = existingByAchId.get(ach.id);
@@ -780,17 +789,26 @@ export async function applyAchievementProgressUpdates(
         });
       }
     } else if (!wasUnlocked && (!existing || existing.currentProgress !== clampedProgress)) {
-      await db
-        .update(schema.userAchievements)
-        .set({ currentProgress: clampedProgress })
-        .where(
-          and(
-            eq(schema.userAchievements.userId, userId),
-            eq(schema.userAchievements.achievementId, ach.id),
-            eq(schema.userAchievements.unlocked, false)
-          )
-        );
+      progressRowsToUpsert.push({
+        userId,
+        achievementId: ach.id,
+        currentProgress: clampedProgress,
+        unlocked: false,
+        unlockedAt: null,
+      });
     }
+  }
+
+  if (progressRowsToUpsert.length > 0) {
+    await db
+      .insert(schema.userAchievements)
+      .values(progressRowsToUpsert)
+      .onConflictDoUpdate({
+        target: [schema.userAchievements.userId, schema.userAchievements.achievementId],
+        set: {
+          currentProgress: sql`CASE WHEN ${schema.userAchievements.unlocked} THEN ${schema.userAchievements.currentProgress} ELSE GREATEST(${schema.userAchievements.currentProgress}, excluded.current_progress) END`,
+        },
+      });
   }
 
   if (totalChapasAwarded > 0) {

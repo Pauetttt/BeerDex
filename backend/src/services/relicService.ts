@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
+import { getCachedCosmetics } from './catalogCache';
 
 export type RelicTier = 'merit' | 'common' | 'epic' | 'legendary';
 
@@ -283,18 +284,9 @@ export async function getActiveUserRelics(
 
   if (slotIds.length === 0) return [];
 
-  const [cosmeticRows, ownedRows] = await Promise.all([
-    db
-      .select({
-        id: schema.cosmetics.id,
-        code: schema.cosmetics.code,
-        name: schema.cosmetics.name,
-        type: schema.cosmetics.type,
-      })
-      .from(schema.cosmetics)
-      .where(
-        and(eq(schema.cosmetics.type, 'relic'), inArray(schema.cosmetics.id, slotIds))
-      ),
+  const slotIdSet = new Set(slotIds);
+  const [allCosmetics, ownedRows] = await Promise.all([
+    getCachedCosmetics(db),
     db
       .select({
         cosmeticId: schema.userCosmetics.cosmeticId,
@@ -309,7 +301,11 @@ export async function getActiveUserRelics(
       ),
   ]);
 
-  const cosmeticMap = new Map(cosmeticRows.map((c) => [c.id, c]));
+  const cosmeticMap = new Map(
+    allCosmetics
+      .filter((c) => c.type === 'relic' && slotIdSet.has(c.id))
+      .map((c) => [c.id, c])
+  );
   const levelMap = new Map(
     ownedRows.map((r) => [r.cosmeticId, clampRelicLevel(r.level)])
   );
