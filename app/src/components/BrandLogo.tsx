@@ -53,7 +53,7 @@ const BRAND_ASSETS: Record<string, ImageSourcePropType> = {
   'brand://sagres': require('../../assets/brands/sagres.png'),
 };
 
-export function BrandLogo({ logoUrl, name, size = 50 }: Props) {
+export const BrandLogo = React.memo(function BrandLogo({ logoUrl, name, size = 50 }: Props) {
   const borderRadius = Math.round(size * 0.26);
   const padding = Math.max(4, Math.round(size * 0.1));
 
@@ -120,7 +120,7 @@ export function BrandLogo({ logoUrl, name, size = 50 }: Props) {
       </Text>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   crestFrame: {

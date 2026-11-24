@@ -1,4 +1,4 @@
-const CACHE_NAME = 'beerdex-pwa-v12';
+const CACHE_NAME = 'beerdex-pwa-v13';
 const PRECACHE_URLS = [
   '/',
   '/manifest.json',
@@ -51,6 +51,22 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
         .catch(() => caches.match(request).then((c) => c || caches.match('/')))
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((res) => {
+          if (res && res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return res;
+        });
+      })
     );
     return;
   }

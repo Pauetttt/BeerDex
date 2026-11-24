@@ -22,7 +22,7 @@ export default function MenuScreen() {
   useFocusEffect(
     useCallback(() => {
       if (userId) {
-        refreshMe();
+        refreshMe({ force: false });
         tabernasApi
           .getMine()
           .then((res) => setMyTabernasCount(res.tabernas.length))

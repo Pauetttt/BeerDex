@@ -1,11 +1,11 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
 import {
-  BARCODE_TO_BEER_NAME,
   expandUpceToEan13,
+  EXTRA_BARCODE_TO_BEER_NAME,
   GS1_PREFIX_TO_BRAND,
   isValidEan13,
-} from '../db/seedData';
+} from './barcodeCatalog';
 
 export interface ResolvedBeerRow {
   id: number;
@@ -593,7 +593,7 @@ export async function resolveBeerByBarcode(
 
   // 2) Coincidencia en el diccionario de códigos de barras comerciales alternativos (unidades y packs/cajas)
   for (const cand of candidates) {
-    const aliasTarget = BARCODE_TO_BEER_NAME[cand];
+    const aliasTarget = EXTRA_BARCODE_TO_BEER_NAME[cand];
     if (!aliasTarget) continue;
     const [aliasRow] = await db
       .select(BEER_SELECT_FIELDS)

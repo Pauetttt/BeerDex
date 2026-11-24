@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { authApi, invalidateAuthSession, meApi, setOnUnauthorizedHandler } from '../services/api';
 import {
   clearTokens,
@@ -9,6 +9,8 @@ import {
 } from '../services/tokenStorage';
 import { AuthUser, MeProfileResponse } from '../types/api';
 
+const ME_STALE_TTL_MS = 8_000;
+
 interface AuthContextValue {
   user: AuthUser | null;
   meProfile: MeProfileResponse | null;
@@ -18,7 +20,7 @@ interface AuthContextValue {
   login: (username: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshMe: () => Promise<MeProfileResponse | null>;
+  refreshMe: (options?: { force?: boolean }) => Promise<MeProfileResponse | null>;
   applyMeProfile: (profile: MeProfileResponse) => void;
 }
 
@@ -30,9 +32,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [ageVerified, setAgeVerifiedState] = useState(false);
   const sessionGenRef = useRef(0);
+  const meProfileRef = useRef<MeProfileResponse | null>(null);
+  const lastFetchedAtRef = useRef(0);
+  const inFlightRefreshRef = useRef<Promise<MeProfileResponse | null> | null>(null);
 
   const handleForcedLogout = useCallback(() => {
     sessionGenRef.current += 1;
+    meProfileRef.current = null;
+    lastFetchedAtRef.current = 0;
+    inFlightRefreshRef.current = null;
     setUser(null);
     setMeProfile(null);
   }, []);
@@ -42,24 +50,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => setOnUnauthorizedHandler(null);
   }, [handleForcedLogout]);
 
-  const refreshMe = useCallback(async (): Promise<MeProfileResponse | null> => {
-    const gen = sessionGenRef.current;
-    const { accessToken, refreshToken } = await getTokens();
-    if (!accessToken && !refreshToken) {
-      return null;
-    }
-    try {
-      const profile = await meApi.getProfile();
-      if (sessionGenRef.current !== gen) {
-        return null;
+  const refreshMe = useCallback(
+    async (options?: { force?: boolean }): Promise<MeProfileResponse | null> => {
+      const force = options?.force ?? true;
+      if (
+        !force &&
+        meProfileRef.current &&
+        Date.now() - lastFetchedAtRef.current < ME_STALE_TTL_MS
+      ) {
+        return meProfileRef.current;
       }
-      setMeProfile(profile);
-      setUser(profile.user);
-      return profile;
-    } catch {
-      return null;
-    }
-  }, []);
+      if (!force && inFlightRefreshRef.current) {
+        return inFlightRefreshRef.current;
+      }
+
+      const gen = sessionGenRef.current;
+      const run = (async (): Promise<MeProfileResponse | null> => {
+        const { accessToken, refreshToken } = await getTokens();
+        if (!accessToken && !refreshToken) {
+          return null;
+        }
+        try {
+          const profile = await meApi.getProfile();
+          if (sessionGenRef.current !== gen) {
+            return null;
+          }
+          meProfileRef.current = profile;
+          lastFetchedAtRef.current = Date.now();
+          setMeProfile(profile);
+          setUser(profile.user);
+          return profile;
+        } catch {
+          return null;
+        }
+      })();
+
+      inFlightRefreshRef.current = run;
+      try {
+        return await run;
+      } finally {
+        if (inFlightRefreshRef.current === run) {
+          inFlightRefreshRef.current = null;
+        }
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     let active = true;
@@ -73,6 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const profile = await meApi.getProfile().catch(() => null);
           if (!active || sessionGenRef.current !== gen) return;
           if (profile) {
+            meProfileRef.current = profile;
+            lastFetchedAtRef.current = Date.now();
             setMeProfile(profile);
             setUser(profile.user);
           } else {
@@ -97,12 +135,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(
     async (username: string, password: string) => {
       sessionGenRef.current += 1;
+      meProfileRef.current = null;
+      lastFetchedAtRef.current = 0;
+      inFlightRefreshRef.current = null;
       const gen = sessionGenRef.current;
       const res = await authApi.login({ username, password });
       if (sessionGenRef.current !== gen) return;
       await setTokens(res.accessToken, res.refreshToken);
       setUser(res.user);
-      await refreshMe();
+      await refreshMe({ force: true });
     },
     [refreshMe]
   );
@@ -110,18 +151,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const register = useCallback(
     async (email: string, username: string, password: string) => {
       sessionGenRef.current += 1;
+      meProfileRef.current = null;
+      lastFetchedAtRef.current = 0;
+      inFlightRefreshRef.current = null;
       const gen = sessionGenRef.current;
       const res = await authApi.register({ email, username, password });
       if (sessionGenRef.current !== gen) return;
       await setTokens(res.accessToken, res.refreshToken);
       setUser(res.user);
-      await refreshMe();
+      await refreshMe({ force: true });
     },
     [refreshMe]
   );
 
   const logout = useCallback(async () => {
     sessionGenRef.current += 1;
+    meProfileRef.current = null;
+    lastFetchedAtRef.current = 0;
+    inFlightRefreshRef.current = null;
     invalidateAuthSession();
     const { refreshToken } = await getTokens();
     await clearTokens();
@@ -133,25 +180,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyMeProfile = useCallback((profile: MeProfileResponse) => {
+    meProfileRef.current = profile;
+    lastFetchedAtRef.current = Date.now();
     setMeProfile(profile);
     setUser(profile.user);
   }, []);
 
+  const contextValue = useMemo<AuthContextValue>(
+    () => ({
+      user,
+      meProfile,
+      loading,
+      ageVerified,
+      confirmAge,
+      login,
+      register,
+      logout,
+      refreshMe,
+      applyMeProfile,
+    }),
+    [
+      user,
+      meProfile,
+      loading,
+      ageVerified,
+      confirmAge,
+      login,
+      register,
+      logout,
+      refreshMe,
+      applyMeProfile,
+    ]
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        meProfile,
-        loading,
-        ageVerified,
-        confirmAge,
-        login,
-        register,
-        logout,
-        refreshMe,
-        applyMeProfile,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

@@ -83,7 +83,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       if (userId) {
-        refreshMe();
+        refreshMe({ force: false });
       }
     }, [userId, refreshMe])
   );

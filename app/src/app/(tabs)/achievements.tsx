@@ -1,20 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   View,
-  Pressable,
 } from 'react-native';
 import { ChapaCoinIcon } from '../../components/ChapaCoinIcon';
 import { ProfileIcon } from '../../components/ProfileIcon';
 import { RelicIcon } from '../../components/RelicIcon';
-import { useAppTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
+import { AppThemeValue, useAppTheme } from '../../context/ThemeContext';
 import { achievementsApi } from '../../services/api';
 import {
   COLORS,
@@ -46,8 +48,169 @@ const COSMETIC_TYPE_LABEL: Record<CosmeticType, string> = {
   color_theme: 'Color',
 };
 
+const ACHIEVEMENT_STALE_TTL_MS = 15_000;
+
+const AchievementSeparator = React.memo(function AchievementSeparator() {
+  return <View style={styles.listSeparator} />;
+});
+
+const AchievementCard = React.memo(function AchievementCard({
+  ach,
+  theme,
+}: {
+  ach: AchievementItem;
+  theme: AppThemeValue;
+}) {
+  const pct =
+    ach.targetValue > 0
+      ? Math.min(100, Math.round((ach.currentProgress / ach.targetValue) * 100))
+      : 0;
+
+  return (
+    <LinearGradient
+      colors={ach.unlocked ? GRADIENTS.unlocked : GRADIENTS.card}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        styles.card,
+        SHADOWS.card,
+        ach.unlocked && { borderColor: theme.border, borderWidth: 1.5 },
+      ]}
+    >
+      {/* Arriba de cada logro sin conseguir: progreso numérico exacto X/Y */}
+      <View style={styles.topBar}>
+        <Text style={styles.category}>{ach.category.toUpperCase()}</Text>
+        {ach.unlocked ? (
+          <View style={styles.doneBadge}>
+            <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
+            <Text style={styles.doneText}>COMPLETADO</Text>
+          </View>
+        ) : (
+          <View style={[styles.progressBadge, { borderColor: theme.border }]}>
+            <Text style={[styles.progressCounterText, { color: theme.bright }]}>
+              {ach.currentProgress}/{ach.targetValue}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.mainRow}>
+        {ach.unlocked ? (
+          <LinearGradient colors={theme.gradientBtn} style={styles.trophyIconDone}>
+            <Ionicons name="trophy" size={22} color={COLORS.bg} />
+          </LinearGradient>
+        ) : (
+          <View style={styles.trophyIcon}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={21}
+              color={COLORS.textMuted}
+            />
+          </View>
+        )}
+
+        <View style={styles.textCol}>
+          <Text style={[styles.achName, ach.unlocked && { color: theme.bright }]}>
+            {ach.id}. {ach.name}
+          </Text>
+          <Text style={styles.achDesc}>{ach.description}</Text>
+
+          {!ach.unlocked ? (
+            <View style={styles.track}>
+              <LinearGradient
+                colors={theme.gradientBtn}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.fill, { width: `${pct}%` }]}
+              />
+            </View>
+          ) : null}
+
+          <View style={styles.rewardsRow}>
+            {ach.rewardChapas > 0 ? (
+              <View
+                style={[
+                  styles.rewardTag,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <ChapaCoinIcon size={14} />
+                <Text style={[styles.rewardText, { color: theme.bright }]}>
+                  +{ach.rewardChapas} Chapas
+                </Text>
+              </View>
+            ) : null}
+            {ach.rewardTitle ? (
+              <View
+                style={[
+                  styles.rewardTag,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <Ionicons name="ribbon-outline" size={13} color={theme.bright} />
+                <Text style={[styles.rewardText, { color: theme.bright }]}>
+                  Título: "{ach.rewardTitle.name}"
+                </Text>
+              </View>
+            ) : null}
+            {ach.rewardIcon ? (
+              <View
+                style={[
+                  styles.rewardTag,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <ProfileIcon
+                  imageUrl={ach.rewardIcon.imageUrl}
+                  size={20}
+                  locked={!ach.unlocked}
+                />
+                <Text style={[styles.rewardText, { color: theme.bright }]}>
+                  Icono: {ach.rewardIcon.name}
+                </Text>
+              </View>
+            ) : null}
+            {ach.rewardCosmetic ? (
+              <View
+                style={[
+                  styles.rewardTag,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                {ach.rewardCosmetic.type === 'relic' ? (
+                  <RelicIcon
+                    previewKey={ach.rewardCosmetic.previewKey}
+                    size={18}
+                    locked={!ach.unlocked}
+                  />
+                ) : (
+                  <Ionicons
+                    name={
+                      ach.rewardCosmetic.type === 'frame'
+                        ? 'scan-circle-outline'
+                        : ach.rewardCosmetic.type === 'card_style'
+                        ? 'albums-outline'
+                        : 'color-palette-outline'
+                    }
+                    size={14}
+                    color={theme.bright}
+                  />
+                )}
+                <Text style={[styles.rewardText, { color: theme.bright }]}>
+                  {COSMETIC_TYPE_LABEL[ach.rewardCosmetic.type]}: {ach.rewardCosmetic.name}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+});
+
 export default function AchievementsScreen() {
   const theme = useAppTheme();
+  const { meProfile } = useAuth();
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [unlockedCount, setUnlockedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(110);
@@ -55,13 +218,30 @@ export default function AchievementsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const hasLoadedOnceRef = useRef(false);
+  const lastFetchedAtRef = useRef(0);
+  const lastSyncedUnlockedRef = useRef<number | null>(null);
+  const meUnlockedRef = useRef<number | null>(null);
+  meUnlockedRef.current = meProfile?.stats.achievementsUnlocked ?? null;
+
   const loadAchievements = useCallback(async (isRefresh = false) => {
+    if (
+      !isRefresh &&
+      hasLoadedOnceRef.current &&
+      Date.now() - lastFetchedAtRef.current < ACHIEVEMENT_STALE_TTL_MS &&
+      meUnlockedRef.current === lastSyncedUnlockedRef.current
+    ) {
+      return;
+    }
     if (isRefresh) setRefreshing(true);
     try {
       const res = await achievementsApi.getAll();
       setAchievements(res.achievements);
       setUnlockedCount(res.unlockedCount);
       setTotalCount(res.totalCount);
+      hasLoadedOnceRef.current = true;
+      lastFetchedAtRef.current = Date.now();
+      lastSyncedUnlockedRef.current = res.unlockedCount;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -82,6 +262,77 @@ export default function AchievementsScreen() {
     return achievements.filter((a) => a.category === selectedCategory);
   }, [achievements, selectedCategory]);
 
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.headerContainer}>
+        <LinearGradient
+          colors={GRADIENTS.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.summaryCard, { borderColor: theme.border }, SHADOWS.card]}
+        >
+          <View style={styles.summaryRow}>
+            <View>
+              <Text style={[styles.summaryLabel, { color: theme.primary }]}>
+                SALA DE TROFEOS
+              </Text>
+              <Text style={styles.summaryTitle}>Logros BeerDex</Text>
+            </View>
+            <LinearGradient colors={theme.gradientBtn} style={styles.summaryBadge}>
+              <Ionicons name="trophy" size={17} color={COLORS.bg} />
+              <Text style={styles.summaryCount}>
+                {unlockedCount} / {totalCount}
+              </Text>
+            </LinearGradient>
+          </View>
+          <View style={styles.overallTrack}>
+            <LinearGradient
+              colors={theme.gradientBtn}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.overallFill, { width: `${overallPct}%` }]}
+            />
+          </View>
+        </LinearGradient>
+
+        {/* Filtro de categorías */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.catsScroll}
+        >
+          {CATEGORIES.map((cat) => {
+            const active = selectedCategory === cat;
+            return (
+              <Pressable
+                key={cat}
+                onPress={() => setSelectedCategory(cat)}
+                style={[
+                  styles.catChip,
+                  active && { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.catChipText, active && { color: theme.bright }]}>
+                  {cat}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    ),
+    [theme, unlockedCount, totalCount, overallPct, selectedCategory]
+  );
+
+  const renderAchievementItem = useCallback(
+    ({ item }: { item: AchievementItem }) => (
+      <AchievementCard ach={item} theme={theme} />
+    ),
+    [theme]
+  );
+
+  const keyExtractor = useCallback((item: AchievementItem) => String(item.id), []);
+
   if (loading && achievements.length === 0) {
     return (
       <View style={styles.center}>
@@ -91,9 +342,17 @@ export default function AchievementsScreen() {
   }
 
   return (
-    <ScrollView
+    <FlatList
       style={styles.root}
       contentContainerStyle={styles.content}
+      data={visibleAchievements}
+      keyExtractor={keyExtractor}
+      renderItem={renderAchievementItem}
+      ListHeaderComponent={listHeader}
+      ItemSeparatorComponent={AchievementSeparator}
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
+      windowSize={7}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -101,211 +360,7 @@ export default function AchievementsScreen() {
           tintColor={theme.primary}
         />
       }
-    >
-      <LinearGradient
-        colors={GRADIENTS.hero}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.summaryCard, { borderColor: theme.border }, SHADOWS.card]}
-      >
-        <View style={styles.summaryRow}>
-          <View>
-            <Text style={[styles.summaryLabel, { color: theme.primary }]}>SALA DE TROFEOS</Text>
-            <Text style={styles.summaryTitle}>Logros BeerDex</Text>
-          </View>
-          <LinearGradient colors={theme.gradientBtn} style={styles.summaryBadge}>
-            <Ionicons name="trophy" size={17} color={COLORS.bg} />
-            <Text style={styles.summaryCount}>
-              {unlockedCount} / {totalCount}
-            </Text>
-          </LinearGradient>
-        </View>
-        <View style={styles.overallTrack}>
-          <LinearGradient
-            colors={theme.gradientBtn}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[styles.overallFill, { width: `${overallPct}%` }]}
-          />
-        </View>
-      </LinearGradient>
-
-      {/* Filtro de categorías */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.catsScroll}
-      >
-        {CATEGORIES.map((cat) => {
-          const active = selectedCategory === cat;
-          return (
-            <Pressable
-              key={cat}
-              onPress={() => setSelectedCategory(cat)}
-              style={[
-                styles.catChip,
-                active && { backgroundColor: theme.tintBg, borderColor: theme.border },
-              ]}
-            >
-              <Text style={[styles.catChipText, active && { color: theme.bright }]}>
-                {cat}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <View style={styles.list}>
-        {visibleAchievements.map((ach) => {
-          const pct =
-            ach.targetValue > 0
-              ? Math.min(100, Math.round((ach.currentProgress / ach.targetValue) * 100))
-              : 0;
-
-          return (
-            <LinearGradient
-              key={ach.id}
-              colors={ach.unlocked ? GRADIENTS.unlocked : GRADIENTS.card}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[
-                styles.card,
-                SHADOWS.card,
-                ach.unlocked && { borderColor: theme.border, borderWidth: 1.5 },
-              ]}
-            >
-              {/* Arriba de cada logro sin conseguir: progreso numérico exacto X/Y */}
-              <View style={styles.topBar}>
-                <Text style={styles.category}>{ach.category.toUpperCase()}</Text>
-                {ach.unlocked ? (
-                  <View style={styles.doneBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color={COLORS.success} />
-                    <Text style={styles.doneText}>COMPLETADO</Text>
-                  </View>
-                ) : (
-                  <View style={[styles.progressBadge, { borderColor: theme.border }]}>
-                    <Text style={[styles.progressCounterText, { color: theme.bright }]}>
-                      {ach.currentProgress}/{ach.targetValue}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.mainRow}>
-                {ach.unlocked ? (
-                  <LinearGradient colors={theme.gradientBtn} style={styles.trophyIconDone}>
-                    <Ionicons name="trophy" size={22} color={COLORS.bg} />
-                  </LinearGradient>
-                ) : (
-                  <View style={styles.trophyIcon}>
-                    <Ionicons
-                      name="lock-closed-outline"
-                      size={21}
-                      color={COLORS.textMuted}
-                    />
-                  </View>
-                )}
-
-                <View style={styles.textCol}>
-                  <Text style={[styles.achName, ach.unlocked && { color: theme.bright }]}>
-                    {ach.id}. {ach.name}
-                  </Text>
-                  <Text style={styles.achDesc}>{ach.description}</Text>
-
-                  {!ach.unlocked ? (
-                    <View style={styles.track}>
-                      <LinearGradient
-                        colors={theme.gradientBtn}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[styles.fill, { width: `${pct}%` }]}
-                      />
-                    </View>
-                  ) : null}
-
-                  <View style={styles.rewardsRow}>
-                    {ach.rewardChapas > 0 ? (
-                      <View
-                        style={[
-                          styles.rewardTag,
-                          { backgroundColor: theme.tintBg, borderColor: theme.border },
-                        ]}
-                      >
-                        <ChapaCoinIcon size={14} />
-                        <Text style={[styles.rewardText, { color: theme.bright }]}>
-                          +{ach.rewardChapas} Chapas
-                        </Text>
-                      </View>
-                    ) : null}
-                    {ach.rewardTitle ? (
-                      <View
-                        style={[
-                          styles.rewardTag,
-                          { backgroundColor: theme.tintBg, borderColor: theme.border },
-                        ]}
-                      >
-                        <Ionicons name="ribbon-outline" size={13} color={theme.bright} />
-                        <Text style={[styles.rewardText, { color: theme.bright }]}>
-                          Título: "{ach.rewardTitle.name}"
-                        </Text>
-                      </View>
-                    ) : null}
-                    {ach.rewardIcon ? (
-                      <View
-                        style={[
-                          styles.rewardTag,
-                          { backgroundColor: theme.tintBg, borderColor: theme.border },
-                        ]}
-                      >
-                        <ProfileIcon
-                          imageUrl={ach.rewardIcon.imageUrl}
-                          size={20}
-                          locked={!ach.unlocked}
-                        />
-                        <Text style={[styles.rewardText, { color: theme.bright }]}>
-                          Icono: {ach.rewardIcon.name}
-                        </Text>
-                      </View>
-                    ) : null}
-                    {ach.rewardCosmetic ? (
-                      <View
-                        style={[
-                          styles.rewardTag,
-                          { backgroundColor: theme.tintBg, borderColor: theme.border },
-                        ]}
-                      >
-                        {ach.rewardCosmetic.type === 'relic' ? (
-                          <RelicIcon
-                            previewKey={ach.rewardCosmetic.previewKey}
-                            size={18}
-                            locked={!ach.unlocked}
-                          />
-                        ) : (
-                          <Ionicons
-                            name={
-                              ach.rewardCosmetic.type === 'frame'
-                                ? 'scan-circle-outline'
-                                : ach.rewardCosmetic.type === 'card_style'
-                                ? 'albums-outline'
-                                : 'color-palette-outline'
-                            }
-                            size={14}
-                            color={theme.bright}
-                          />
-                        )}
-                        <Text style={[styles.rewardText, { color: theme.bright }]}>
-                          {COSMETIC_TYPE_LABEL[ach.rewardCosmetic.type]}: {ach.rewardCosmetic.name}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-              </View>
-            </LinearGradient>
-          );
-        })}
-      </View>
-    </ScrollView>
+    />
   );
 }
 
@@ -319,8 +374,14 @@ const styles = StyleSheet.create({
     maxWidth: 740,
     width: '100%',
     alignSelf: 'center',
-    gap: SPACING.md,
     paddingBottom: SPACING.xxl,
+  },
+  headerContainer: {
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  listSeparator: {
+    height: SPACING.md,
   },
   center: {
     flex: 1,
@@ -402,9 +463,6 @@ const styles = StyleSheet.create({
   },
   catChipTextActive: {
     color: COLORS.amberBright,
-  },
-  list: {
-    gap: SPACING.md,
   },
   card: {
     borderRadius: RADIUS.xl,

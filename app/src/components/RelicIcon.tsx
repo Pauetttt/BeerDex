@@ -53,7 +53,7 @@ interface Props {
   level?: number;
 }
 
-export function RelicIcon({
+export const RelicIcon = React.memo(function RelicIcon({
   previewKey,
   size = 48,
   locked = false,
@@ -107,7 +107,7 @@ export function RelicIcon({
       />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   wrap: {

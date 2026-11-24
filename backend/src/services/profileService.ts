@@ -1,6 +1,13 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
 import { ensureUserAchievements, evaluateAchievements } from './achievementEngine';
+import {
+  getCachedAchievements,
+  getCachedBeers,
+  getCachedCosmetics,
+  getCachedIcons,
+  getCachedTitles,
+} from './catalogCache';
 import {
   ActiveRelicsSummaryDto,
   buildActiveRelicsSummary,
@@ -145,19 +152,21 @@ export async function getUserAchievementsList(
   unlockedCount: number;
   totalCount: number;
 }> {
-  await evaluateAchievements(db, userId);
-  await evaluateTabernaAchievements(db, userId);
+  await Promise.all([
+    evaluateAchievements(db, userId),
+    evaluateTabernaAchievements(db, userId),
+  ]);
 
   const [allAchievements, userProgress, allTitles, allIcons, allCosmetics] =
     await Promise.all([
-      db.select().from(schema.achievements).orderBy(asc(schema.achievements.id)),
+      getCachedAchievements(db),
       db
         .select()
         .from(schema.userAchievements)
         .where(eq(schema.userAchievements.userId, userId)),
-      db.select().from(schema.titles),
-      db.select().from(schema.icons),
-      db.select().from(schema.cosmetics),
+      getCachedTitles(db),
+      getCachedIcons(db),
+      getCachedCosmetics(db),
     ]);
 
   const progressMap = new Map(userProgress.map((p) => [p.achievementId, p]));
@@ -248,13 +257,13 @@ export async function getFullUserProfile(
     userOwnedIcons,
     userOwnedTitles,
     userOwnedCosmetics,
-    userBeerRows,
+    userBeerCountRows,
     totalBeersRows,
   ] = await Promise.all([
-    db.select().from(schema.icons).orderBy(asc(schema.icons.id)),
-    db.select().from(schema.titles).orderBy(asc(schema.titles.id)),
-    db.select().from(schema.cosmetics).orderBy(asc(schema.cosmetics.id)),
-    db.select().from(schema.achievements),
+    getCachedIcons(db),
+    getCachedTitles(db),
+    getCachedCosmetics(db),
+    getCachedAchievements(db),
     db
       .select()
       .from(schema.userAchievements)
@@ -272,11 +281,12 @@ export async function getFullUserProfile(
       .from(schema.userCosmetics)
       .where(eq(schema.userCosmetics.userId, userId)),
     db
-      .select({ id: schema.userBeers.id })
+      .select({ count: sql<number>`count(*)::int` })
       .from(schema.userBeers)
       .where(eq(schema.userBeers.userId, userId)),
-    db.select({ id: schema.beers.id }).from(schema.beers),
+    getCachedBeers(db),
   ]);
+  const userBeerCount = Number(userBeerCountRows[0]?.count) || 0;
 
   const achMap = new Map(allAchievements.map((a) => [a.id, a]));
   const unlockedAchSet = new Set(
@@ -440,7 +450,7 @@ export async function getFullUserProfile(
       profilesVisitedCount: user.profilesVisitedCount,
     },
     stats: {
-      beersRegistered: userBeerRows.length,
+      beersRegistered: userBeerCount,
       beersTotal: totalBeersRows.length,
       achievementsUnlocked: unlockedAchSet.size,
       achievementsTotal: allAchievements.length,

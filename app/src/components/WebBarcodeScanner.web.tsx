@@ -1,12 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import {
-  BarcodeFormat,
-  BinaryBitmap,
-  DecodeHintType,
-  HTMLCanvasElementLuminanceSource,
-  HybridBinarizer,
-  MultiFormatReader,
-} from '@zxing/library';
+import type { MultiFormatReader } from '@zxing/library';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -14,6 +7,16 @@ import { COLORS, FONTS, GRADIENTS, RADIUS, SHADOWS, SPACING } from '../theme/tok
 import type { WebBarcodeScannerProps } from './WebBarcodeScanner';
 
 const EAN_REGEX = /^\d{8}$|^\d{12,14}$/;
+
+type ZxingModule = typeof import('@zxing/library');
+let zxingModulePromise: Promise<ZxingModule> | null = null;
+
+function loadZxingModule(): Promise<ZxingModule> {
+  if (!zxingModulePromise) {
+    zxingModulePromise = import('@zxing/library');
+  }
+  return zxingModulePromise;
+}
 
 interface NativeBarcodeResult {
   rawValue?: string;
@@ -40,30 +43,31 @@ function createNativeEanDetector(): NativeBarcodeDetector | null {
   }
 }
 
-function createEanReader(): MultiFormatReader {
-  const hints = new Map<DecodeHintType, unknown>();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.EAN_13,
-    BarcodeFormat.EAN_8,
-    BarcodeFormat.UPC_A,
-    BarcodeFormat.UPC_E,
+function createEanReader(zxing: ZxingModule): MultiFormatReader {
+  const hints = new Map<unknown, unknown>();
+  hints.set(zxing.DecodeHintType.POSSIBLE_FORMATS, [
+    zxing.BarcodeFormat.EAN_13,
+    zxing.BarcodeFormat.EAN_8,
+    zxing.BarcodeFormat.UPC_A,
+    zxing.BarcodeFormat.UPC_E,
   ]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  const reader = new MultiFormatReader();
-  reader.setHints(hints);
+  hints.set(zxing.DecodeHintType.TRY_HARDER, true);
+  const reader = new zxing.MultiFormatReader();
+  reader.setHints(hints as never);
   return reader;
 }
 
 function tryDecodeCanvas(
   canvas: HTMLCanvasElement,
-  reader: MultiFormatReader
+  reader: MultiFormatReader,
+  zxing: ZxingModule
 ): string | null {
   if (canvas.width < 32 || canvas.height < 32) return null;
-  const source = new HTMLCanvasElementLuminanceSource(canvas);
+  const source = new zxing.HTMLCanvasElementLuminanceSource(canvas);
   const attempts = [source, source.invert()];
   for (const luminance of attempts) {
     try {
-      const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
+      const bitmap = new zxing.BinaryBitmap(new zxing.HybridBinarizer(luminance));
       const result = reader.decodeWithState(bitmap);
       const raw = result?.getText().trim();
       if (raw && EAN_REGEX.test(raw)) {
@@ -514,7 +518,16 @@ export function WebBarcodeScanner({
     let rafId = 0;
     const FRAME_INTERVAL_MS = 33; // ~30 FPS reales
 
-    const reader = createEanReader();
+    let zxingMod: ZxingModule | null = null;
+    let reader: MultiFormatReader | null = null;
+    void loadZxingModule()
+      .then((mod) => {
+        if (!scanCancelled) {
+          zxingMod = mod;
+          reader = createEanReader(mod);
+        }
+      })
+      .catch(() => {});
     const nativeDetector = createNativeEanDetector();
     const scanCanvas = document.createElement('canvas');
     const scanCtx =
@@ -569,7 +582,7 @@ export function WebBarcodeScanner({
           }
         }
 
-        if (scanCancelled || scannedRef.current || !scanCtx) return;
+        if (scanCancelled || scannedRef.current || !scanCtx || !zxingMod || !reader) return;
 
         // Si el navegador tiene BarcodeDetector nativo, respaldamos con ZXing cada 4 ticks (~7.5 FPS)
         // para no sobrecargar la CPU; sin detector nativo (iOS/Firefox) ZXing corre a 30 FPS.
@@ -586,7 +599,7 @@ export function WebBarcodeScanner({
         const bandX = Math.round((vw - bandW) / 2);
         const bandY = Math.round((vh - bandH) / 2);
         drawRegionToCanvas(scanCanvas, scanCtx, video, bandX, bandY, bandW, bandH, 640);
-        const bandCode = tryDecodeCanvas(scanCanvas, reader);
+        const bandCode = tryDecodeCanvas(scanCanvas, reader, zxingMod);
         if (bandCode) {
           handleDetected(bandCode);
           return;
@@ -595,7 +608,7 @@ export function WebBarcodeScanner({
         // Pasada 3: fotograma completo alternado para códigos alejados o descentrados
         if (tickCount % 2 === 1) {
           drawRegionToCanvas(scanCanvas, scanCtx, video, 0, 0, vw, vh, 720);
-          const fullCode = tryDecodeCanvas(scanCanvas, reader);
+          const fullCode = tryDecodeCanvas(scanCanvas, reader, zxingMod);
           if (fullCode) {
             handleDetected(fullCode);
           }
@@ -752,7 +765,8 @@ export function WebBarcodeScanner({
         return;
       }
 
-      const reader = createEanReader();
+      const zxingMod = await loadZxingModule();
+      const reader = createEanReader(zxingMod);
       const regions: Array<{
         sx: number;
         sy: number;
@@ -775,7 +789,7 @@ export function WebBarcodeScanner({
 
       for (const r of regions) {
         drawRegionToCanvas(canvas, ctx, img, r.sx, r.sy, r.sw, r.sh, r.maxW, r.rotate90);
-        const found = tryDecodeCanvas(canvas, reader);
+        const found = tryDecodeCanvas(canvas, reader, zxingMod);
         if (found) {
           const capturedFrameBase64 = captureFullFrameBase64(img, 768, 0.78);
           playScanBeep();

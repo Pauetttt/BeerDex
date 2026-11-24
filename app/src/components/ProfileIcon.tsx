@@ -173,7 +173,7 @@ const FRAME_PRESETS: Record<
   },
 };
 
-export function ProfileIcon({
+export const ProfileIcon = React.memo(function ProfileIcon({
   imageUrl,
   size = 44,
   locked = false,
@@ -381,7 +381,7 @@ export function ProfileIcon({
       ) : null}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   frameOuter: {

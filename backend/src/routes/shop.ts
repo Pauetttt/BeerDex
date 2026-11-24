@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { getDb, schema } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware';
 import {
+  getCachedCosmetics,
+  getCachedIcons,
+  getCachedTitles,
+} from '../services/catalogCache';
+import {
   backfillUserChapasIfNeeded,
   getFullUserProfile,
   parseCosmeticMetadata,
@@ -86,29 +91,17 @@ router.get(
     }
 
     const [
-      shopIcons,
-      shopTitles,
-      shopCosmetics,
+      allIcons,
+      allTitles,
+      allCosmetics,
       ownedIcons,
       ownedTitles,
       ownedCosmetics,
       activeRelics,
     ] = await Promise.all([
-      db
-        .select()
-        .from(schema.icons)
-        .where(eq(schema.icons.source, 'shop'))
-        .orderBy(asc(schema.icons.priceChapas), asc(schema.icons.id)),
-      db
-        .select()
-        .from(schema.titles)
-        .where(eq(schema.titles.source, 'shop'))
-        .orderBy(asc(schema.titles.priceChapas), asc(schema.titles.id)),
-      db
-        .select()
-        .from(schema.cosmetics)
-        .where(eq(schema.cosmetics.source, 'shop'))
-        .orderBy(asc(schema.cosmetics.priceChapas), asc(schema.cosmetics.id)),
+      getCachedIcons(db),
+      getCachedTitles(db),
+      getCachedCosmetics(db),
       db
         .select({ iconId: schema.userIcons.iconId })
         .from(schema.userIcons)
@@ -126,6 +119,12 @@ router.get(
         .where(eq(schema.userCosmetics.userId, userId)),
       getActiveUserRelics(db, userId),
     ]);
+
+    const byPriceThenId = <T extends { priceChapas: number | null; id: number }>(a: T, b: T) =>
+      (a.priceChapas ?? 0) - (b.priceChapas ?? 0) || a.id - b.id;
+    const shopIcons = allIcons.filter((i) => i.source === 'shop').sort(byPriceThenId);
+    const shopTitles = allTitles.filter((t) => t.source === 'shop').sort(byPriceThenId);
+    const shopCosmetics = allCosmetics.filter((c) => c.source === 'shop').sort(byPriceThenId);
 
     const shopDiscountPct = getShopDiscountPct(activeRelics);
     const ownedIconSet = new Set(ownedIcons.map((r) => r.iconId));

@@ -3,7 +3,6 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { AppDatabase, getDb, schema } from '../db';
-import { BARCODE_TO_BEER_NAME, isValidEan13 } from '../db/seedData';
 import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware';
 import {
   evaluateAchievements,
@@ -16,10 +15,15 @@ import {
   verifyScanVerificationToken,
 } from '../services/antiCheatService';
 import {
+  EXTRA_BARCODE_TO_BEER_NAME,
+  isValidEan13,
+} from '../services/barcodeCatalog';
+import {
   buildBarcodeCandidates,
   getScopedBrandBeers,
   resolveBeerByBarcode,
 } from '../services/barcodeService';
+import { getCachedBeers, getCachedBrands } from '../services/catalogCache';
 import {
   calculateBeerRegistrationChapas,
   getActiveUserRelics,
@@ -68,8 +72,8 @@ router.get(
     const userId = req.userId!;
 
     const [allBrands, allBeers, userBeers] = await Promise.all([
-      db.select().from(schema.brands).orderBy(asc(schema.brands.id)),
-      db.select().from(schema.beers).orderBy(asc(schema.beers.id)),
+      getCachedBrands(db),
+      getCachedBeers(db),
       db
         .select()
         .from(schema.userBeers)
@@ -77,9 +81,18 @@ router.get(
     ]);
 
     const userBeerMap = new Map(userBeers.map((ub) => [ub.beerId, ub]));
+    const beersByBrand = new Map<number, typeof allBeers>();
+    for (const beer of allBeers) {
+      let arr = beersByBrand.get(beer.brandId);
+      if (!arr) {
+        arr = [];
+        beersByBrand.set(beer.brandId, arr);
+      }
+      arr.push(beer);
+    }
 
     const brandsPayload = allBrands.map((brand) => {
-      const brandBeers = allBeers.filter((b) => b.brandId === brand.id);
+      const brandBeers = beersByBrand.get(brand.id) ?? [];
       let registeredInBrand = 0;
 
       const beersPayload = brandBeers.map((beer) => {
@@ -561,7 +574,7 @@ router.post(
             .where(inArray(schema.beers.barcode, dbCandidates))
         : [undefined];
 
-    if (existingBeer || candidates.some((cand) => Boolean(BARCODE_TO_BEER_NAME[cand]))) {
+    if (existingBeer || candidates.some((cand) => Boolean(EXTRA_BARCODE_TO_BEER_NAME[cand]))) {
       throw new HttpError(
         409,
         'Este código de barras ya existe en el catálogo oficial de BeerDex.'

@@ -1,4 +1,3 @@
-import { Resend } from 'resend';
 import { env, isResendConfigured } from '../config/env';
 
 export interface RecoveryEmailPayload {
@@ -28,13 +27,23 @@ export async function sendPasswordRecoveryEmail(
   `;
 
   if (isResendConfigured()) {
-    const resendClient = new Resend(env.resend.apiKey);
-    await resendClient.emails.send({
-      from: env.resend.emailFrom,
-      to: payload.to,
-      subject,
-      html,
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.resend.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: env.resend.emailFrom,
+        to: [payload.to],
+        subject,
+        html,
+      }),
     });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Resend HTTP ${res.status}: ${detail}`);
+    }
     return { sentVia: 'resend' };
   }
 

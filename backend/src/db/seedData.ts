@@ -1,4 +1,15 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import {
+  expandUpceToEan13,
+  EXTRA_BARCODE_TO_BEER_NAME,
+  GS1_PREFIX_TO_BRAND,
+  isValidEan,
+  isValidEan8,
+  isValidEan13,
+  isValidGtin14,
+  isValidUpce,
+} from '../services/barcodeCatalog';
+import { invalidateCatalogCache } from '../services/catalogCache';
 import { AppDatabase, schema } from './index';
 import {
   ACHIEVEMENTS_SEED,
@@ -7,7 +18,20 @@ import {
   TITLES_SEED,
 } from './fase2Seeds';
 
-export { ACHIEVEMENTS_SEED, COSMETICS_SEED, ICONS_SEED, TITLES_SEED };
+export {
+  ACHIEVEMENTS_SEED,
+  COSMETICS_SEED,
+  expandUpceToEan13,
+  EXTRA_BARCODE_TO_BEER_NAME,
+  GS1_PREFIX_TO_BRAND,
+  ICONS_SEED,
+  isValidEan,
+  isValidEan8,
+  isValidEan13,
+  isValidGtin14,
+  isValidUpce,
+  TITLES_SEED,
+};
 
 export interface SeedSummary {
   icons: number;
@@ -16,71 +40,6 @@ export interface SeedSummary {
   achievements: number;
   brands: number;
   beers: number;
-}
-
-export function isValidEan13(code: string): boolean {
-  if (!/^\d{13}$/.test(code)) return false;
-  let sum = 0;
-  for (let i = 0; i < 12; i += 1) {
-    const digit = Number(code[i]);
-    sum += i % 2 === 0 ? digit : digit * 3;
-  }
-  const expected = (10 - (sum % 10)) % 10;
-  return expected === Number(code[12]);
-}
-
-export function isValidEan8(code: string): boolean {
-  if (!/^\d{8}$/.test(code)) return false;
-  let sum = 0;
-  for (let i = 0; i < 7; i += 1) {
-    const digit = Number(code[i]);
-    sum += i % 2 === 0 ? digit * 3 : digit;
-  }
-  const expected = (10 - (sum % 10)) % 10;
-  return expected === Number(code[7]);
-}
-
-export function isValidGtin14(code: string): boolean {
-  if (!/^\d{14}$/.test(code)) return false;
-  let sum = 0;
-  for (let i = 0; i < 13; i += 1) {
-    const digit = Number(code[i]);
-    sum += i % 2 === 0 ? digit * 3 : digit;
-  }
-  const expected = (10 - (sum % 10)) % 10;
-  return expected === Number(code[13]);
-}
-
-export function expandUpceToEan13(code: string): string | null {
-  if (!/^[01]\d{7}$/.test(code)) return null;
-  const ns = code[0];
-  const d1 = code[1];
-  const d2 = code[2];
-  const d3 = code[3];
-  const d4 = code[4];
-  const d5 = code[5];
-  const d6 = code[6];
-  const chk = code[7];
-  let upca11: string;
-  if (d6 === '0' || d6 === '1' || d6 === '2') {
-    upca11 = `${ns}${d1}${d2}${d6}0000${d3}${d4}${d5}`;
-  } else if (d6 === '3') {
-    upca11 = `${ns}${d1}${d2}${d3}00000${d4}${d5}`;
-  } else if (d6 === '4') {
-    upca11 = `${ns}${d1}${d2}${d3}${d4}00000${d5}`;
-  } else {
-    upca11 = `${ns}${d1}${d2}${d3}${d4}${d5}0000${d6}`;
-  }
-  const ean13 = `0${upca11}${chk}`;
-  return isValidEan13(ean13) ? ean13 : null;
-}
-
-export function isValidUpce(code: string): boolean {
-  return expandUpceToEan13(code) !== null;
-}
-
-export function isValidEan(code: string): boolean {
-  return isValidEan13(code) || isValidEan8(code) || isValidUpce(code) || isValidGtin14(code);
 }
 
 export interface BeerSeedItem {
@@ -6970,98 +6929,6 @@ export const BARCODE_TO_BEER_NAME: Record<string, { brandName: string; beerName:
   return map;
 })();
 
-export const GS1_PREFIX_TO_BRAND: Array<{
-  prefix: string;
-  brandName: string;
-  defaultBeerName: string;
-  relatedBrandNames?: string[];
-}> = [
-  // 9-digit sub-prefixes (longest match first)
-  { prefix: '841079303', brandName: 'Voll-Damm', defaultBeerName: 'Voll-Damm Doble Malta Botellín', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841079322', brandName: 'Victoria', defaultBeerName: 'Victoria Málaga Clásica Botellín', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841079363', brandName: 'Victoria', defaultBeerName: 'Victoria Málaga Clásica Botellín', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841079364', brandName: 'Victoria', defaultBeerName: 'Victoria Málaga Clásica Botellín', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841079317', brandName: 'Keler', defaultBeerName: 'Keler 18 Lata', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841079318', brandName: 'Keler', defaultBeerName: 'Keler 18 Lata', relatedBrandNames: ['Estrella Damm'] },
-  { prefix: '841319409', brandName: 'Turia', defaultBeerName: 'Turia Märzen Botellín', relatedBrandNames: ['Estrella de Levante'] },
-  { prefix: '841059010', brandName: 'El Águila', defaultBeerName: 'El Águila Sin Filtrar Botellín', relatedBrandNames: ['Tropical'] },
-  { prefix: '841059011', brandName: 'El Águila', defaultBeerName: 'El Águila Sin Filtrar Botellín', relatedBrandNames: ['Tropical'] },
-  { prefix: '841059031', brandName: 'El Águila', defaultBeerName: 'El Águila Sin Filtrar Botellín', relatedBrandNames: ['Tropical'] },
-  { prefix: '841059001', brandName: 'Tropical', defaultBeerName: 'Tropical Pilsen Botellín', relatedBrandNames: ['El Águila'] },
-  { prefix: '841059004', brandName: 'Tropical', defaultBeerName: 'Tropical Pilsen Botellín', relatedBrandNames: ['El Águila'] },
-  { prefix: '841059020', brandName: 'Tropical', defaultBeerName: 'Tropical Pilsen Botellín', relatedBrandNames: ['El Águila'] },
-  { prefix: '841460674', brandName: 'La Salve', defaultBeerName: 'La Salve Lager Auténtica Botellín', relatedBrandNames: ['La Virgen'] },
-
-  // 7-digit brewery prefixes (all 41 brands)
-  { prefix: '8412598', brandName: 'Estrella Galicia', defaultBeerName: 'Estrella Galicia Especial Botellín', relatedBrandNames: ['1906'] },
-  { prefix: '8410521', brandName: 'Estrella Galicia', defaultBeerName: 'Estrella Galicia Especial Botellín', relatedBrandNames: ['1906'] },
-  { prefix: '8411327', brandName: 'Mahou', defaultBeerName: 'Mahou Cinco Estrellas Lata' },
-  { prefix: '3458327', brandName: 'Mahou', defaultBeerName: 'Mahou Cinco Estrellas Lata' },
-  { prefix: '8410085', brandName: 'Mahou', defaultBeerName: 'Mahou Cinco Estrellas Botellín' },
-  { prefix: '8413681', brandName: 'Alhambra', defaultBeerName: 'Alhambra Especial Lata' },
-  { prefix: '8414606', brandName: 'La Virgen', defaultBeerName: 'La Virgen Madrid Lager Botellín', relatedBrandNames: ['La Salve'] },
-  { prefix: '8437012', brandName: 'La Virgen', defaultBeerName: 'La Virgen Madrid Lager Botellín' },
-  { prefix: '8437019', brandName: 'La Virgen', defaultBeerName: 'La Virgen Madrid Lager Botellín' },
-  { prefix: '8410793', brandName: 'Estrella Damm', defaultBeerName: 'Estrella Damm Mediterránea Lata', relatedBrandNames: ['Voll-Damm', 'Victoria', 'Keler'] },
-  { prefix: '8410105', brandName: 'Estrella Damm', defaultBeerName: 'Estrella Damm Mediterránea Botellín' },
-  { prefix: '8410655', brandName: 'San Miguel', defaultBeerName: 'San Miguel Especial Lata' },
-  { prefix: '8410261', brandName: 'San Miguel', defaultBeerName: 'San Miguel Especial Botellín' },
-  { prefix: '8411090', brandName: 'Cruzcampo', defaultBeerName: 'Cruzcampo Pilsen Lata', relatedBrandNames: ['El Águila'] },
-  { prefix: '8410285', brandName: 'Cruzcampo', defaultBeerName: 'Cruzcampo Pilsen Botellín' },
-  { prefix: '8410700', brandName: 'Ámbar', defaultBeerName: 'Ámbar Especial Botellín', relatedBrandNames: ['Moritz'] },
-  { prefix: '8410709', brandName: 'Ámbar', defaultBeerName: 'Ámbar Export Botellín' },
-  { prefix: '8410412', brandName: 'Ámbar', defaultBeerName: 'Ámbar Especial Botellín' },
-  { prefix: '8410590', brandName: 'El Águila', defaultBeerName: 'El Águila Sin Filtrar Botellín', relatedBrandNames: ['Tropical'] },
-  { prefix: '8413194', brandName: 'Estrella de Levante', defaultBeerName: 'Estrella de Levante Clásica Botellín', relatedBrandNames: ['Turia'] },
-  { prefix: '8410569', brandName: 'Amstel', defaultBeerName: 'Amstel Original Botellín', relatedBrandNames: ['Heineken'] },
-  { prefix: '8414161', brandName: 'Dorada', defaultBeerName: 'Dorada Pilsen Botellín' },
-  { prefix: '8413510', brandName: 'El Alcázar', defaultBeerName: 'El Alcázar Especial Botellín' },
-  { prefix: '8437010', brandName: 'El Alcázar', defaultBeerName: 'El Alcázar Especial Botellín' },
-  { prefix: '8437011', brandName: 'La Sagra', defaultBeerName: 'La Sagra Original Botellín' },
-  { prefix: '8712000', brandName: 'Heineken', defaultBeerName: 'Heineken Original Lata', relatedBrandNames: ['Amstel', 'Desperados'] },
-  { prefix: '3119780', brandName: 'Desperados', defaultBeerName: 'Desperados Original Botellín', relatedBrandNames: ['Heineken'] },
-  { prefix: '3155930', brandName: 'Desperados', defaultBeerName: 'Desperados Original Botellín', relatedBrandNames: ['Heineken'] },
-  { prefix: '5000213', brandName: 'Guinness', defaultBeerName: 'Guinness Draught Lata' },
-  { prefix: '5052542', brandName: 'Guinness', defaultBeerName: 'Guinness West Indies Porter Botellín' },
-  { prefix: '4053400', brandName: 'Guinness', defaultBeerName: 'Guinness Hop House 13 Botellín' },
-  { prefix: '5410218', brandName: 'Guinness', defaultBeerName: 'Guinness Special Export Stout Botellín' },
-  { prefix: '4066600', brandName: 'Paulaner', defaultBeerName: 'Paulaner Hefe-Weißbier Botellín' },
-  { prefix: '4072700', brandName: 'Franziskaner', defaultBeerName: 'Franziskaner Hefe-Weissbier Naturtrüb Botellín' },
-  { prefix: '4072100', brandName: 'Franziskaner', defaultBeerName: 'Franziskaner Hefe-Weissbier Naturtrüb Botellín' },
-  { prefix: '5410228', brandName: 'Leffe', defaultBeerName: 'Leffe Blonde Botellín', relatedBrandNames: ['Stella Artois', 'Budweiser', 'Corona'] },
-  { prefix: '5412186', brandName: 'Delirium Tremens', defaultBeerName: 'Delirium Tremens Botellín' },
-  { prefix: '5056025', brandName: 'BrewDog', defaultBeerName: 'BrewDog Punk IPA Lata' },
-  { prefix: '5060154', brandName: 'BrewDog', defaultBeerName: 'BrewDog Punk IPA Botellín' },
-  { prefix: '7501064', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín', relatedBrandNames: ['Modelo'] },
-  { prefix: '7503034', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '7503038', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '7504167', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '7503281', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '7503392', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '7501376', brandName: 'Corona', defaultBeerName: 'Corona Extra Botellín' },
-  { prefix: '0080660', brandName: 'Modelo', defaultBeerName: 'Modelo Especial Botellín', relatedBrandNames: ['Corona'] },
-  { prefix: '0033544', brandName: 'Modelo', defaultBeerName: 'Modelo Chelada Limón y Sal Lata', relatedBrandNames: ['Corona'] },
-  { prefix: '0018200', brandName: 'Budweiser', defaultBeerName: 'Budweiser Original Botellín', relatedBrandNames: ['Stella Artois'] },
-  { prefix: '5014379', brandName: 'Budweiser', defaultBeerName: 'Budweiser Original Botellín', relatedBrandNames: ['Stella Artois'] },
-  { prefix: '5010017', brandName: 'Stella Artois', defaultBeerName: 'Stella Artois Original Botellín', relatedBrandNames: ['Budweiser'] },
-  { prefix: '0786150', brandName: 'Stella Artois', defaultBeerName: 'Stella Artois Original Botellín', relatedBrandNames: ['Budweiser'] },
-  { prefix: '5740600', brandName: 'Carlsberg', defaultBeerName: 'Carlsberg Danish Pilsner Lata' },
-  { prefix: '3080216', brandName: 'Carlsberg', defaultBeerName: 'Carlsberg Danish Pilsner Botellín' },
-  { prefix: '5010153', brandName: 'Carlsberg', defaultBeerName: 'Carlsberg Danish Pilsner Lata' },
-  { prefix: '4101010', brandName: 'Carlsberg', defaultBeerName: 'Carlsberg 0,0 Sin Alcohol Lata' },
-  { prefix: '8594404', brandName: 'Pilsner Urquell', defaultBeerName: 'Pilsner Urquell Original Botellín' },
-  { prefix: '8008440', brandName: 'Peroni', defaultBeerName: 'Peroni Nastro Azzurro Botellín', relatedBrandNames: ['Asahi'] },
-  { prefix: '5014138', brandName: 'Peroni', defaultBeerName: 'Peroni Nastro Azzurro Botellín' },
-  { prefix: '4901004', brandName: 'Asahi', defaultBeerName: 'Asahi Super Dry Lata' },
-  { prefix: '4904230', brandName: 'Asahi', defaultBeerName: 'Asahi Dry Zero 0,0% Lata' },
-  { prefix: '5060006', brandName: 'Asahi', defaultBeerName: 'Asahi Super Dry Lata' },
-  { prefix: '0038766', brandName: 'Asahi', defaultBeerName: 'Asahi Dry Black Botellín' },
-  { prefix: '4901880', brandName: 'Sapporo', defaultBeerName: 'Sapporo Premium Beer Lata' },
-  { prefix: '0087975', brandName: 'Sapporo', defaultBeerName: 'Sapporo Premium Beer Botellín' },
-  { prefix: '0056910', brandName: 'Sapporo', defaultBeerName: 'Sapporo Premium Beer Botellín' },
-  { prefix: '5601164', brandName: 'Super Bock', defaultBeerName: 'Super Bock Original Botellín' },
-  { prefix: '5601146', brandName: 'Sagres', defaultBeerName: 'Sagres Branca Original Botellín' },
-];
 
 function validateSeedCatalog(): void {
   const seenBarcodes = new Set<string>();
@@ -7084,6 +6951,10 @@ function validateSeedCatalog(): void {
           throw new Error(`Código alternativo duplicado en seed: ${cleanExtra} (${beer.name})`);
         }
         seenBarcodes.add(cleanExtra);
+        const mappedExtra = EXTRA_BARCODE_TO_BEER_NAME[cleanExtra];
+        if (!mappedExtra || mappedExtra.brandName !== brand.name || mappedExtra.beerName !== beer.name) {
+          throw new Error(`Código alternativo ${cleanExtra} (${beer.name}) desincronizado en barcodeCatalog.ts.`);
+        }
       }
       const len = beer.shortHistory.length;
       if (len < 120 || len > 150) {
@@ -7431,6 +7302,8 @@ export async function seedDatabase(db: AppDatabase): Promise<SeedSummary> {
   await db.execute(
     sql`SELECT setval(pg_get_serial_sequence('beers', 'id'), COALESCE((SELECT MAX(id) FROM beers), 1))`
   );
+
+  invalidateCatalogCache();
 
   return {
     icons: ICONS_SEED.length,

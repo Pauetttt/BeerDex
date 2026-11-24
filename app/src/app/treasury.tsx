@@ -57,7 +57,7 @@ export default function TreasuryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (userId) {
-        refreshMe();
+        refreshMe({ force: false });
       }
     }, [userId, refreshMe])
   );

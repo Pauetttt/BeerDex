@@ -3,7 +3,8 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { AppDatabase, closeDb, initDb, schema } from './index';
-import { isValidEan13 } from './seedData';
+import { isValidEan13 } from '../services/barcodeCatalog';
+import { invalidateCatalogCache } from '../services/catalogCache';
 
 export interface CatalogImportRow {
   brand_name: string;
@@ -193,6 +194,8 @@ export async function importCatalogEntries(
   await db.execute(
     sql`SELECT setval(pg_get_serial_sequence('beers', 'id'), COALESCE((SELECT MAX(id) FROM beers), 1))`
   );
+
+  invalidateCatalogCache();
 
   return {
     brandsProcessed: brandIdCache.size,

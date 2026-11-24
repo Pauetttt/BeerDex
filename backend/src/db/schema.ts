@@ -194,7 +194,10 @@ export const userAchievements = pgTable(
     unlocked: boolean('unlocked').default(false).notNull(),
     unlockedAt: timestamp('unlocked_at', { withTimezone: true }),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.achievementId] })]
+  (table) => [
+    primaryKey({ columns: [table.userId, table.achievementId] }),
+    index('user_achievements_user_unlocked_idx').on(table.userId, table.unlocked),
+  ]
 );
 
 export const friendships = pgTable(
@@ -435,6 +438,7 @@ export const tabernaRequests = pgTable(
     uniqueIndex('taberna_requests_pending_unique')
       .on(table.tabernaId, table.userId)
       .where(sql`${table.status} = 'pending'`),
+    index('taberna_requests_taberna_status_idx').on(table.tabernaId, table.status),
   ]
 );
 
@@ -497,6 +501,7 @@ export const tabernaContributions = pgTable(
       table.beerId
     ),
     index('taberna_contributions_mission_idx').on(table.missionId),
+    index('taberna_contributions_mission_user_idx').on(table.missionId, table.userId),
   ]
 );
 

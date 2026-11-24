@@ -4,8 +4,15 @@ import { z } from 'zod';
 import { getDb, schema } from '../db';
 import { AuthenticatedRequest, requireAuth } from '../middleware/authMiddleware';
 import { evaluateAchievements } from '../services/achievementEngine';
+import {
+  getCachedBeers,
+  getCachedCosmetics,
+  getCachedIcons,
+  getCachedTitles,
+} from '../services/catalogCache';
 import { getUserAchievementsList, parseCosmeticMetadata } from '../services/profileService';
 import { buildRelicPowerDto, clampRelicLevel } from '../services/relicService';
+import { buildSharedUserSummaryMap } from '../services/userSummaryService';
 import { asyncHandler, HttpError, isUuid } from '../utils/httpError';
 
 const router = Router();
@@ -24,92 +31,8 @@ const respondRequestSchema = z.object({
   action: z.enum(['accept', 'reject']),
 });
 
-interface FrameSummary {
-  id: number;
-  code: string;
-  name: string;
-  previewKey: string;
-  metadata: Record<string, unknown> | null;
-}
-
 async function buildUserSummaryMap(userIds: string[]) {
-  const db = getDb();
-  if (userIds.length === 0) {
-    return new Map<
-      string,
-      {
-        id: string;
-        username: string;
-        equippedIcon: { id: number; name: string; imageUrl: string };
-        equippedTitle: { id: number; name: string };
-        equippedFrame: FrameSummary | null;
-        beersCount: number;
-      }
-    >();
-  }
-
-  const [userRows, allIcons, allTitles, allCosmetics, userBeerRows] = await Promise.all([
-    db.select().from(schema.users).where(inArray(schema.users.id, userIds)),
-    db.select().from(schema.icons),
-    db.select().from(schema.titles),
-    db.select().from(schema.cosmetics),
-    db
-      .select({ userId: schema.userBeers.userId })
-      .from(schema.userBeers)
-      .where(inArray(schema.userBeers.userId, userIds)),
-  ]);
-
-  const iconMap = new Map(allIcons.map((i) => [i.id, i]));
-  const titleMap = new Map(allTitles.map((t) => [t.id, t]));
-  const cosmeticMap = new Map(allCosmetics.map((c) => [c.id, c]));
-  const defaultFrame = allCosmetics.find((c) => c.type === 'frame' && c.source === 'default');
-  const beerCounts = new Map<string, number>();
-  for (const row of userBeerRows) {
-    beerCounts.set(row.userId, (beerCounts.get(row.userId) || 0) + 1);
-  }
-
-  const result = new Map<
-    string,
-    {
-      id: string;
-      username: string;
-      equippedIcon: { id: number; name: string; imageUrl: string };
-      equippedTitle: { id: number; name: string };
-      equippedFrame: FrameSummary | null;
-      beersCount: number;
-    }
-  >();
-
-  for (const u of userRows) {
-    const icon = iconMap.get(u.equippedIconId) ?? {
-      id: 1,
-      name: 'Jarra Clásica',
-      imageUrl: 'icon://mug-classic',
-    };
-    const title = titleMap.get(u.equippedTitleId) ?? {
-      id: 1,
-      name: 'Cervecero Novato',
-    };
-    const frameRow = (u.equippedFrameId ? cosmeticMap.get(u.equippedFrameId) : undefined) ?? defaultFrame;
-    result.set(u.id, {
-      id: u.id,
-      username: u.username,
-      equippedIcon: { id: icon.id, name: icon.name, imageUrl: icon.imageUrl },
-      equippedTitle: { id: title.id, name: title.name },
-      equippedFrame: frameRow
-        ? {
-            id: frameRow.id,
-            code: frameRow.code,
-            name: frameRow.name,
-            previewKey: frameRow.previewKey,
-            metadata: parseCosmeticMetadata(frameRow.metadataJson),
-          }
-        : null,
-      beersCount: beerCounts.get(u.id) || 0,
-    });
-  }
-
-  return result;
+  return buildSharedUserSummaryMap(getDb(), userIds);
 }
 
 router.get(
@@ -131,7 +54,7 @@ router.get(
             )
           )
         ),
-      db.select({ id: schema.beers.id }).from(schema.beers),
+      getCachedBeers(db),
     ]);
 
     const friendIds = friendships.map((f) =>
@@ -580,11 +503,11 @@ router.get(
       newlyUnlocked = await evaluateAchievements(db, viewerId);
     }
 
-    const [iconRows, titleRows, allCosmetics, targetOwnedCosmetics, targetBeers, viewerBeers, totalBeers, achData] =
+    const [allIcons, allTitles, allCosmetics, targetOwnedCosmetics, targetBeers, viewerBeers, totalBeers, achData] =
       await Promise.all([
-        db.select().from(schema.icons).where(eq(schema.icons.id, targetUser.equippedIconId)),
-        db.select().from(schema.titles).where(eq(schema.titles.id, targetUser.equippedTitleId)),
-        db.select().from(schema.cosmetics),
+        getCachedIcons(db),
+        getCachedTitles(db),
+        getCachedCosmetics(db),
         db
           .select({ cosmeticId: schema.userCosmetics.cosmeticId, level: schema.userCosmetics.level })
           .from(schema.userCosmetics)
@@ -604,9 +527,12 @@ router.get(
           .select({ beerId: schema.userBeers.beerId })
           .from(schema.userBeers)
           .where(eq(schema.userBeers.userId, viewerId)),
-        db.select({ id: schema.beers.id }).from(schema.beers),
+        getCachedBeers(db),
         getUserAchievementsList(db, targetUserId),
       ]);
+
+    const iconRows = allIcons.filter((i) => i.id === targetUser.equippedIconId);
+    const titleRows = allTitles.filter((t) => t.id === targetUser.equippedTitleId);
 
     const cosmeticMap = new Map(allCosmetics.map((c) => [c.id, c]));
     const targetLevelMap = new Map(

@@ -34,7 +34,11 @@ interface Props {
 
 const CARD_HEIGHT = 296;
 
-export function BeerCard({ beer, onFlipToBack, cardStyleMetadata }: Props) {
+export const BeerCard = React.memo(function BeerCard({
+  beer,
+  onFlipToBack,
+  cardStyleMetadata,
+}: Props) {
   const { user } = useAuth();
   const [isFlipped, setIsFlipped] = useState(false);
   const [zoomVisible, setZoomVisible] = useState(false);
@@ -306,7 +310,7 @@ export function BeerCard({ beer, onFlipToBack, cardStyleMetadata }: Props) {
       </Modal>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   cardSlot: {

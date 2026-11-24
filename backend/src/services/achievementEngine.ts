@@ -1,6 +1,13 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { AppDatabase, schema } from '../db';
 import {
+  getCachedAchievements,
+  getCachedBeers,
+  getCachedCosmetics,
+  getCachedIcons,
+  getCachedTitles,
+} from './catalogCache';
+import {
   calculateAchievementRewardChapas,
   getActiveUserRelics,
 } from './relicService';
@@ -52,17 +59,14 @@ export function computeMaxConsecutiveDays(dates: Date[]): number {
 }
 
 export async function ensureUserAchievements(db: AppDatabase, userId: string): Promise<void> {
-  const [userExists] = await db
-    .select({ id: schema.users.id })
-    .from(schema.users)
-    .where(eq(schema.users.id, userId));
-  if (!userExists) return;
-
-  const allAchievements = await db
-    .select({ id: schema.achievements.id })
-    .from(schema.achievements);
-
-  if (allAchievements.length === 0) return;
+  const [userExists, allAchievements] = await Promise.all([
+    db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId)),
+    getCachedAchievements(db),
+  ]);
+  if (userExists.length === 0 || allAchievements.length === 0) return;
 
   await db
     .insert(schema.userAchievements)
@@ -112,18 +116,8 @@ export async function evaluateAchievements(
   db: AppDatabase,
   userId: string
 ): Promise<NewlyUnlockedAchievement[]> {
-  await ensureUserAchievements(db, userId);
-
-  const [userRow] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, userId));
-
-  if (!userRow) {
-    return [];
-  }
-
   const [
+    userRows,
     allAchievements,
     allTitles,
     allIcons,
@@ -135,13 +129,12 @@ export async function evaluateAchievements(
     visitRows,
     acceptedFriendIds,
   ] = await Promise.all([
-    db.select().from(schema.achievements),
-    db.select().from(schema.titles),
-    db.select().from(schema.icons),
-    db.select().from(schema.cosmetics),
-    db
-      .select({ id: schema.beers.id, brandId: schema.beers.brandId })
-      .from(schema.beers),
+    db.select().from(schema.users).where(eq(schema.users.id, userId)),
+    getCachedAchievements(db),
+    getCachedTitles(db),
+    getCachedIcons(db),
+    getCachedCosmetics(db),
+    getCachedBeers(db),
     db
       .select({
         beerId: schema.userBeers.beerId,
@@ -171,10 +164,24 @@ export async function evaluateAchievements(
     getAcceptedFriendIds(db, userId),
   ]);
 
+  const userRow = userRows[0];
+  if (!userRow) {
+    return [];
+  }
+
+  let resolvedExistingRows = existingRows;
+  if (resolvedExistingRows.length < allAchievements.length) {
+    await ensureUserAchievements(db, userId);
+    resolvedExistingRows = await db
+      .select()
+      .from(schema.userAchievements)
+      .where(eq(schema.userAchievements.userId, userId));
+  }
+
   const titleById = new Map(allTitles.map((t) => [t.id, t]));
   const iconById = new Map(allIcons.map((i) => [i.id, i]));
   const cosmeticById = new Map(allCosmetics.map((c) => [c.id, c]));
-  const existingByAchId = new Map(existingRows.map((r) => [r.achievementId, r]));
+  const existingByAchId = new Map(resolvedExistingRows.map((r) => [r.achievementId, r]));
 
   // Totales por marca en catálogo
   const brandTotalMap = new Map<number, number>();
@@ -476,6 +483,7 @@ export async function evaluateAchievements(
   // Los logros ≥101 (Tabernas y Hermandad) los gestiona tabernaService.
   const first99 = allAchievements.filter((a) => a.id < 100).sort((a, b) => a.id - b.id);
   const ultimateAch = allAchievements.find((a) => a.id === 100);
+  const pendingUpdates: Array<Promise<unknown>> = [];
 
   for (const ach of first99) {
     const existing = existingByAchId.get(ach.id);
@@ -500,19 +508,21 @@ export async function evaluateAchievements(
       existing.currentProgress !== clampedProgress ||
       existing.unlocked !== isNowUnlocked
     ) {
-      await db
-        .update(schema.userAchievements)
-        .set({
-          currentProgress: clampedProgress,
-          unlocked: isNowUnlocked,
-          unlockedAt,
-        })
-        .where(
-          and(
-            eq(schema.userAchievements.userId, userId),
-            eq(schema.userAchievements.achievementId, ach.id)
+      pendingUpdates.push(
+        db
+          .update(schema.userAchievements)
+          .set({
+            currentProgress: clampedProgress,
+            unlocked: isNowUnlocked,
+            unlockedAt,
+          })
+          .where(
+            and(
+              eq(schema.userAchievements.userId, userId),
+              eq(schema.userAchievements.achievementId, ach.id)
+            )
           )
-        );
+      );
     }
 
     if (!wasUnlocked && isNowUnlocked) {
@@ -568,19 +578,21 @@ export async function evaluateAchievements(
       existing.currentProgress !== clampedProgress ||
       existing.unlocked !== isNowUnlocked
     ) {
-      await db
-        .update(schema.userAchievements)
-        .set({
-          currentProgress: clampedProgress,
-          unlocked: isNowUnlocked,
-          unlockedAt,
-        })
-        .where(
-          and(
-            eq(schema.userAchievements.userId, userId),
-            eq(schema.userAchievements.achievementId, 100)
+      pendingUpdates.push(
+        db
+          .update(schema.userAchievements)
+          .set({
+            currentProgress: clampedProgress,
+            unlocked: isNowUnlocked,
+            unlockedAt,
+          })
+          .where(
+            and(
+              eq(schema.userAchievements.userId, userId),
+              eq(schema.userAchievements.achievementId, 100)
+            )
           )
-        );
+      );
     }
 
     if (!wasUnlocked && isNowUnlocked) {
@@ -622,6 +634,10 @@ export async function evaluateAchievements(
     }
   }
 
+  if (pendingUpdates.length > 0) {
+    await Promise.all(pendingUpdates);
+  }
+
   if (totalChapasAwarded > 0) {
     await db
       .update(schema.users)
@@ -645,23 +661,20 @@ export async function applyAchievementProgressUpdates(
   rawProgressById: Record<number, number>
 ): Promise<NewlyUnlockedAchievement[]> {
   if (achievementIds.length === 0) return [];
-  await ensureUserAchievements(db, userId);
 
+  const targetIdSet = new Set(achievementIds);
   const [
-    targetAchievements,
+    allAchievements,
     allTitles,
     allIcons,
     allCosmetics,
     existingRows,
     activeRelics,
   ] = await Promise.all([
-    db
-      .select()
-      .from(schema.achievements)
-      .where(inArray(schema.achievements.id, achievementIds)),
-    db.select().from(schema.titles),
-    db.select().from(schema.icons),
-    db.select().from(schema.cosmetics),
+    getCachedAchievements(db),
+    getCachedTitles(db),
+    getCachedIcons(db),
+    getCachedCosmetics(db),
     db
       .select()
       .from(schema.userAchievements)
@@ -674,12 +687,27 @@ export async function applyAchievementProgressUpdates(
     getActiveUserRelics(db, userId),
   ]);
 
+  const targetAchievements = allAchievements.filter((a) => targetIdSet.has(a.id));
   if (targetAchievements.length === 0) return [];
+
+  let resolvedExistingRows = existingRows;
+  if (resolvedExistingRows.length < targetAchievements.length) {
+    await ensureUserAchievements(db, userId);
+    resolvedExistingRows = await db
+      .select()
+      .from(schema.userAchievements)
+      .where(
+        and(
+          eq(schema.userAchievements.userId, userId),
+          inArray(schema.userAchievements.achievementId, achievementIds)
+        )
+      );
+  }
 
   const titleById = new Map(allTitles.map((t) => [t.id, t]));
   const iconById = new Map(allIcons.map((i) => [i.id, i]));
   const cosmeticById = new Map(allCosmetics.map((c) => [c.id, c]));
-  const existingByAchId = new Map(existingRows.map((r) => [r.achievementId, r]));
+  const existingByAchId = new Map(resolvedExistingRows.map((r) => [r.achievementId, r]));
 
   const now = new Date();
   const newlyUnlocked: NewlyUnlockedAchievement[] = [];

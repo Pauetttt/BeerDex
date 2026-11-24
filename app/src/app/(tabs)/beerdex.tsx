@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -27,12 +28,18 @@ import {
   SHADOWS,
   SPACING,
 } from '../../theme/tokens';
-import { BeerDexResponse, BeerFormat } from '../../types/api';
+import { BeerDexItem, BeerDexResponse, BeerFormat, BrandDexItem } from '../../types/api';
 
 type FilterMode = 'all' | 'unlocked' | 'locked';
 type FormatFilter = 'all' | BeerFormat;
 
+interface VisibleBrandEntry {
+  brand: BrandDexItem;
+  filteredBeers: BeerDexItem[];
+}
+
 const BEERDEX_CACHE_KEY = 'beerdex_cache_v1';
+const BEERDEX_STALE_TTL_MS = 15_000;
 const STYLE_OPTIONS = ['all', 'Lager', 'Tostada', 'IPA', 'Negra', '0,0%', 'Trigo'] as const;
 
 function normalizeSearchText(value: string): string {
@@ -42,9 +49,117 @@ function normalizeSearchText(value: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+const BrandListSeparator = React.memo(function BrandListSeparator() {
+  return <View style={styles.listSeparator} />;
+});
+
+const BrandAccordionItem = React.memo(function BrandAccordionItem({
+  brand,
+  filteredBeers,
+  isExpanded,
+  onToggle,
+  onFlipToBack,
+}: {
+  brand: BrandDexItem;
+  filteredBeers: BeerDexItem[];
+  isExpanded: boolean;
+  onToggle: (brandId: number) => void;
+  onFlipToBack: (beerId: number) => void;
+}) {
+  const completed = brand.totalCount > 0 && brand.registeredCount >= brand.totalCount;
+  const brandPct =
+    brand.totalCount > 0 ? Math.round((brand.registeredCount / brand.totalCount) * 100) : 0;
+
+  return (
+    <LinearGradient
+      colors={completed ? GRADIENTS.unlocked : GRADIENTS.card}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[
+        styles.brandSection,
+        SHADOWS.card,
+        completed && styles.brandCompleted,
+      ]}
+    >
+      <Pressable onPress={() => onToggle(brand.id)} style={styles.brandHeader}>
+        <BrandLogo logoUrl={brand.logoUrl} name={brand.name} size={54} />
+        <View style={styles.brandInfo}>
+          <View style={styles.brandTitleRow}>
+            <Text style={styles.brandName} numberOfLines={1}>
+              {brand.name}
+            </Text>
+            <View
+              style={[
+                styles.brandCountBadge,
+                completed && styles.brandCountCompleted,
+              ]}
+            >
+              {completed ? <Ionicons name="trophy" size={11} color={COLORS.gold} /> : null}
+              <Text
+                style={[
+                  styles.brandCountText,
+                  completed && styles.brandCountTextCompleted,
+                ]}
+              >
+                {brand.registeredCount} / {brand.totalCount}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.brandMiniTrack}>
+            <LinearGradient
+              colors={GRADIENTS.progress}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.brandMiniFill, { width: `${brandPct}%` }]}
+            />
+          </View>
+        </View>
+        <View style={styles.chevronWrap}>
+          <Ionicons
+            name={isExpanded ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={COLORS.amberBright}
+          />
+        </View>
+      </Pressable>
+
+      {brand.history ? (
+        <View style={styles.brandHistoryBox}>
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+            style={[
+              styles.brandHistoryScroll,
+              isExpanded && styles.brandHistoryScrollExpanded,
+            ]}
+          >
+            <Text style={styles.brandHistory}>{brand.history}</Text>
+          </ScrollView>
+        </View>
+      ) : null}
+
+      {isExpanded ? (
+        <View style={styles.brandBody}>
+          {filteredBeers.length === 0 ? (
+            <Text style={styles.emptyBrandFilter}>
+              No hay cervezas en esta categoría para {brand.name}.
+            </Text>
+          ) : (
+            <View style={styles.grid}>
+              {filteredBeers.map((beer) => (
+                <BeerCard key={beer.id} beer={beer} onFlipToBack={onFlipToBack} />
+              ))}
+            </View>
+          )}
+        </View>
+      ) : null}
+    </LinearGradient>
+  );
+});
+
 export default function BeerDexScreen() {
   const router = useRouter();
-  const { refreshMe } = useAuth();
+  const { meProfile, refreshMe } = useAuth();
   const theme = useAppTheme();
   const { showAchievements } = useAchievementToast();
 
@@ -59,12 +174,29 @@ export default function BeerDexScreen() {
   const [styleFilter, setStyleFilter] = useState<string>('all');
   const [expandedBrandIds, setExpandedBrandIds] = useState<Set<number>>(new Set());
 
+  const hasLoadedOnceRef = useRef(false);
+  const lastFetchedAtRef = useRef(0);
+  const lastSyncedBeersCountRef = useRef<number | null>(null);
+  const meBeersCountRef = useRef<number | null>(null);
+  meBeersCountRef.current = meProfile?.stats.beersRegistered ?? null;
+
   const fetchDex = useCallback(async (isRefresh = false) => {
+    if (
+      !isRefresh &&
+      hasLoadedOnceRef.current &&
+      Date.now() - lastFetchedAtRef.current < BEERDEX_STALE_TTL_MS &&
+      meBeersCountRef.current === lastSyncedBeersCountRef.current
+    ) {
+      return;
+    }
     if (isRefresh) setRefreshing(true);
     try {
       const res = await beerdexApi.getDex();
       setData(res);
       setOfflineFallback(false);
+      hasLoadedOnceRef.current = true;
+      lastFetchedAtRef.current = Date.now();
+      lastSyncedBeersCountRef.current = res.global.registeredCount;
       await AsyncStorage.setItem(BEERDEX_CACHE_KEY, JSON.stringify(res)).catch(() => {});
     } catch {
       const cachedRaw = await AsyncStorage.getItem(BEERDEX_CACHE_KEY).catch(() => null);
@@ -89,7 +221,7 @@ export default function BeerDexScreen() {
     }, [fetchDex])
   );
 
-  const toggleBrand = (brandId: number) => {
+  const toggleBrand = useCallback((brandId: number) => {
     setExpandedBrandIds((prev) => {
       const next = new Set(prev);
       if (next.has(brandId)) {
@@ -99,7 +231,7 @@ export default function BeerDexScreen() {
       }
       return next;
     });
-  };
+  }, []);
 
   const handleFlipToBack = useCallback(
     async (beerId: number) => {
@@ -124,7 +256,7 @@ export default function BeerDexScreen() {
   const hasActiveSearchOrAttrFilter =
     searchQuery.trim().length > 0 || formatFilter !== 'all' || styleFilter !== 'all';
 
-  const visibleBrands = useMemo(() => {
+  const visibleBrands = useMemo<VisibleBrandEntry[]>(() => {
     if (!data) return [];
     const q = normalizeSearchText(searchQuery.trim());
 
@@ -150,6 +282,222 @@ export default function BeerDexScreen() {
       .filter((entry) => !hasActiveSearchOrAttrFilter || entry.filteredBeers.length > 0);
   }, [data, filter, formatFilter, hasActiveSearchOrAttrFilter, searchQuery, styleFilter]);
 
+  const listHeader = useMemo(
+    () => (
+      <View style={styles.headerContainer}>
+        {offlineFallback ? (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={16} color={COLORS.amberBright} />
+            <Text style={styles.offlineText}>
+              Modo sin conexión (mostrando última copia guardada)
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Botón superior destacado Registrar Cerveza */}
+        <Pressable
+          onPress={() => router.push('/scan')}
+          style={({ pressed }) => [pressed && styles.pressed]}
+        >
+          <LinearGradient
+            colors={theme.gradientBtn}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={[styles.scanCta, SHADOWS.amberGlow]}
+          >
+            <Ionicons name="barcode-outline" size={23} color={COLORS.bg} />
+            <Text style={styles.scanCtaText}>Registrar Cerveza</Text>
+          </LinearGradient>
+        </Pressable>
+
+        {/* Contador Global */}
+        <LinearGradient
+          colors={GRADIENTS.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.globalCard, { borderColor: theme.border }, SHADOWS.card]}
+        >
+          <View style={styles.globalTopRow}>
+            <View>
+              <Text style={[styles.globalLabel, { color: theme.primary }]}>PROGRESO GLOBAL</Text>
+              <Text style={styles.globalSub}>{data?.brands.length ?? 41} casas cerveceras</Text>
+            </View>
+            <View style={styles.globalRight}>
+              <Text style={styles.globalCounter}>
+                {data?.global.registeredCount ?? 0} / {data?.global.totalCount ?? 0}
+              </Text>
+              <View
+                style={[
+                  styles.pctBadge,
+                  { backgroundColor: theme.tintBg, borderColor: theme.border },
+                ]}
+              >
+                <Text style={[styles.pctBadgeText, { color: theme.bright }]}>{progressPct}%</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.progressTrack}>
+            <LinearGradient
+              colors={theme.gradientBtn}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.progressFill, { width: `${progressPct}%` }]}
+            />
+          </View>
+        </LinearGradient>
+
+        {/* Buscador rápido */}
+        <View style={styles.searchWrap}>
+          <Ionicons name="search" size={18} color={COLORS.textMuted} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Buscar cerveza o marca..."
+            placeholderTextColor={COLORS.textMuted}
+            autoCapitalize="none"
+            style={styles.searchInput}
+          />
+          {searchQuery.length > 0 ? (
+            <Pressable
+              onPress={() => setSearchQuery('')}
+              hitSlop={8}
+              accessibilityLabel="Limpiar búsqueda"
+            >
+              <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
+            </Pressable>
+          ) : null}
+        </View>
+
+        {/* Filtros segmentados de estado */}
+        <View style={styles.segmentedTrack}>
+          {(
+            [
+              { key: 'all', label: 'Todas' },
+              { key: 'unlocked', label: 'Conseguidas' },
+              { key: 'locked', label: 'Pendientes' },
+            ] as const
+          ).map((item) => {
+            const active = filter === item.key;
+            return (
+              <Pressable
+                key={item.key}
+                onPress={() => setFilter(item.key)}
+                style={[styles.segmentPill, active && styles.segmentPillActive]}
+              >
+                <Text style={[styles.filterText, active && styles.filterTextActive]}>
+                  {item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Chips de formato y estilo */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsScroll}
+        >
+          {(
+            [
+              { key: 'all', label: 'Formato: Todos' },
+              { key: 'lata', label: 'Lata' },
+              { key: 'botellin', label: 'Botellín' },
+              { key: 'litrona', label: 'Litrona' },
+            ] as const
+          ).map((f) => {
+            const active = formatFilter === f.key;
+            return (
+              <Pressable
+                key={f.key}
+                onPress={() => setFormatFilter(f.key)}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                  {f.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipsScroll}
+        >
+          {STYLE_OPTIONS.map((st) => {
+            const active = styleFilter === st;
+            return (
+              <Pressable
+                key={st}
+                onPress={() => setStyleFilter(st)}
+                style={[styles.chip, active && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                  {st === 'all' ? 'Estilo: Todos' : st}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    ),
+    [
+      offlineFallback,
+      router,
+      theme,
+      data?.brands.length,
+      data?.global.registeredCount,
+      data?.global.totalCount,
+      progressPct,
+      searchQuery,
+      filter,
+      formatFilter,
+      styleFilter,
+    ]
+  );
+
+  const listEmpty = useMemo(
+    () => (
+      <LinearGradient colors={GRADIENTS.card} style={[styles.emptySearchBox, SHADOWS.card]}>
+        <Ionicons name="beer-outline" size={34} color={COLORS.textMuted} />
+        <Text style={styles.emptyBrandFilter}>
+          No encontramos cervezas con esos filtros.
+        </Text>
+        {hasActiveSearchOrAttrFilter ? (
+          <Pressable
+            onPress={() => {
+              setSearchQuery('');
+              setFormatFilter('all');
+              setStyleFilter('all');
+              setFilter('all');
+            }}
+            style={styles.clearFiltersBtn}
+          >
+            <Text style={styles.clearFiltersText}>Restablecer filtros</Text>
+          </Pressable>
+        ) : null}
+      </LinearGradient>
+    ),
+    [hasActiveSearchOrAttrFilter]
+  );
+
+  const renderBrandItem = useCallback(
+    ({ item }: { item: VisibleBrandEntry }) => (
+      <BrandAccordionItem
+        brand={item.brand}
+        filteredBeers={item.filteredBeers}
+        isExpanded={hasActiveSearchOrAttrFilter || expandedBrandIds.has(item.brand.id)}
+        onToggle={toggleBrand}
+        onFlipToBack={handleFlipToBack}
+      />
+    ),
+    [hasActiveSearchOrAttrFilter, expandedBrandIds, toggleBrand, handleFlipToBack]
+  );
+
+  const keyExtractor = useCallback((item: VisibleBrandEntry) => String(item.brand.id), []);
+
   if (loading && !data) {
     return (
       <View style={styles.center}>
@@ -160,10 +508,20 @@ export default function BeerDexScreen() {
   }
 
   return (
-    <ScrollView
+    <FlatList
       style={styles.root}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
+      data={visibleBrands}
+      extraData={expandedBrandIds}
+      keyExtractor={keyExtractor}
+      renderItem={renderBrandItem}
+      ListHeaderComponent={listHeader}
+      ListEmptyComponent={listEmpty}
+      ItemSeparatorComponent={BrandListSeparator}
+      initialNumToRender={10}
+      maxToRenderPerBatch={8}
+      windowSize={7}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -171,296 +529,7 @@ export default function BeerDexScreen() {
           tintColor={COLORS.amber}
         />
       }
-    >
-      {offlineFallback ? (
-        <View style={styles.offlineBanner}>
-          <Ionicons name="cloud-offline-outline" size={16} color={COLORS.amberBright} />
-          <Text style={styles.offlineText}>
-            Modo sin conexión (mostrando última copia guardada)
-          </Text>
-        </View>
-      ) : null}
-
-      {/* Botón superior destacado Registrar Cerveza */}
-      <Pressable
-        onPress={() => router.push('/scan')}
-        style={({ pressed }) => [pressed && styles.pressed]}
-      >
-        <LinearGradient
-          colors={theme.gradientBtn}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={[styles.scanCta, SHADOWS.amberGlow]}
-        >
-          <Ionicons name="barcode-outline" size={23} color={COLORS.bg} />
-          <Text style={styles.scanCtaText}>Registrar Cerveza</Text>
-        </LinearGradient>
-      </Pressable>
-
-      {/* Contador Global */}
-      <LinearGradient
-        colors={GRADIENTS.hero}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.globalCard, { borderColor: theme.border }, SHADOWS.card]}
-      >
-        <View style={styles.globalTopRow}>
-          <View>
-            <Text style={[styles.globalLabel, { color: theme.primary }]}>PROGRESO GLOBAL</Text>
-            <Text style={styles.globalSub}>{data?.brands.length ?? 41} casas cerveceras</Text>
-          </View>
-          <View style={styles.globalRight}>
-            <Text style={styles.globalCounter}>
-              {data?.global.registeredCount ?? 0} / {data?.global.totalCount ?? 0}
-            </Text>
-            <View
-              style={[
-                styles.pctBadge,
-                { backgroundColor: theme.tintBg, borderColor: theme.border },
-              ]}
-            >
-              <Text style={[styles.pctBadgeText, { color: theme.bright }]}>{progressPct}%</Text>
-            </View>
-          </View>
-        </View>
-        <View style={styles.progressTrack}>
-          <LinearGradient
-            colors={theme.gradientBtn}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={[styles.progressFill, { width: `${progressPct}%` }]}
-          />
-        </View>
-      </LinearGradient>
-
-      {/* Buscador rápido */}
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={COLORS.textMuted} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Buscar cerveza o marca..."
-          placeholderTextColor={COLORS.textMuted}
-          autoCapitalize="none"
-          style={styles.searchInput}
-        />
-        {searchQuery.length > 0 ? (
-          <Pressable
-            onPress={() => setSearchQuery('')}
-            hitSlop={8}
-            accessibilityLabel="Limpiar búsqueda"
-          >
-            <Ionicons name="close-circle" size={18} color={COLORS.textMuted} />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* Filtros segmentados de estado */}
-      <View style={styles.segmentedTrack}>
-        {(
-          [
-            { key: 'all', label: 'Todas' },
-            { key: 'unlocked', label: 'Conseguidas' },
-            { key: 'locked', label: 'Pendientes' },
-          ] as const
-        ).map((item) => {
-          const active = filter === item.key;
-          return (
-            <Pressable
-              key={item.key}
-              onPress={() => setFilter(item.key)}
-              style={[styles.segmentPill, active && styles.segmentPillActive]}
-            >
-              <Text style={[styles.filterText, active && styles.filterTextActive]}>
-                {item.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {/* Chips de formato y estilo */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsScroll}
-      >
-        {(
-          [
-            { key: 'all', label: 'Formato: Todos' },
-            { key: 'lata', label: 'Lata' },
-            { key: 'botellin', label: 'Botellín' },
-            { key: 'litrona', label: 'Litrona' },
-          ] as const
-        ).map((f) => {
-          const active = formatFilter === f.key;
-          return (
-            <Pressable
-              key={f.key}
-              onPress={() => setFormatFilter(f.key)}
-              style={[styles.chip, active && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {f.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.chipsScroll}
-      >
-        {STYLE_OPTIONS.map((st) => {
-          const active = styleFilter === st;
-          return (
-            <Pressable
-              key={st}
-              onPress={() => setStyleFilter(st)}
-              style={[styles.chip, active && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                {st === 'all' ? 'Estilo: Todos' : st}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-
-      {/* Listado de Marcas ("Generaciones") */}
-      {visibleBrands.length === 0 ? (
-        <LinearGradient colors={GRADIENTS.card} style={[styles.emptySearchBox, SHADOWS.card]}>
-          <Ionicons name="beer-outline" size={34} color={COLORS.textMuted} />
-          <Text style={styles.emptyBrandFilter}>
-            No encontramos cervezas con esos filtros.
-          </Text>
-          {hasActiveSearchOrAttrFilter ? (
-            <Pressable
-              onPress={() => {
-                setSearchQuery('');
-                setFormatFilter('all');
-                setStyleFilter('all');
-                setFilter('all');
-              }}
-              style={styles.clearFiltersBtn}
-            >
-              <Text style={styles.clearFiltersText}>Restablecer filtros</Text>
-            </Pressable>
-          ) : null}
-        </LinearGradient>
-      ) : (
-        <View style={styles.brandsList}>
-          {visibleBrands.map(({ brand, filteredBeers }) => {
-            const isExpanded =
-              hasActiveSearchOrAttrFilter || expandedBrandIds.has(brand.id);
-            const completed =
-              brand.totalCount > 0 && brand.registeredCount >= brand.totalCount;
-            const brandPct =
-              brand.totalCount > 0
-                ? Math.round((brand.registeredCount / brand.totalCount) * 100)
-                : 0;
-
-            return (
-              <LinearGradient
-                key={brand.id}
-                colors={completed ? GRADIENTS.unlocked : GRADIENTS.card}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[
-                  styles.brandSection,
-                  SHADOWS.card,
-                  completed && styles.brandCompleted,
-                ]}
-              >
-                <Pressable
-                  onPress={() => toggleBrand(brand.id)}
-                  style={styles.brandHeader}
-                >
-                  <BrandLogo logoUrl={brand.logoUrl} name={brand.name} size={54} />
-                  <View style={styles.brandInfo}>
-                    <View style={styles.brandTitleRow}>
-                      <Text style={styles.brandName} numberOfLines={1}>
-                        {brand.name}
-                      </Text>
-                      <View
-                        style={[
-                          styles.brandCountBadge,
-                          completed && styles.brandCountCompleted,
-                        ]}
-                      >
-                        {completed ? (
-                          <Ionicons name="trophy" size={11} color={COLORS.gold} />
-                        ) : null}
-                        <Text
-                          style={[
-                            styles.brandCountText,
-                            completed && styles.brandCountTextCompleted,
-                          ]}
-                        >
-                          {brand.registeredCount} / {brand.totalCount}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.brandMiniTrack}>
-                      <LinearGradient
-                        colors={GRADIENTS.progress}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 0 }}
-                        style={[styles.brandMiniFill, { width: `${brandPct}%` }]}
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.chevronWrap}>
-                    <Ionicons
-                      name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                      size={18}
-                      color={COLORS.amberBright}
-                    />
-                  </View>
-                </Pressable>
-
-                {brand.history ? (
-                  <View style={styles.brandHistoryBox}>
-                    <ScrollView
-                      nestedScrollEnabled
-                      showsVerticalScrollIndicator
-                      style={[
-                        styles.brandHistoryScroll,
-                        isExpanded && styles.brandHistoryScrollExpanded,
-                      ]}
-                    >
-                      <Text style={styles.brandHistory}>{brand.history}</Text>
-                    </ScrollView>
-                  </View>
-                ) : null}
-
-                {isExpanded ? (
-                  <View style={styles.brandBody}>
-                    {filteredBeers.length === 0 ? (
-                      <Text style={styles.emptyBrandFilter}>
-                        No hay cervezas en esta categoría para {brand.name}.
-                      </Text>
-                    ) : (
-                      <View style={styles.grid}>
-                        {filteredBeers.map((beer) => (
-                          <BeerCard
-                            key={beer.id}
-                            beer={beer}
-                            onFlipToBack={handleFlipToBack}
-                          />
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                ) : null}
-              </LinearGradient>
-            );
-          })}
-        </View>
-      )}
-    </ScrollView>
+    />
   );
 }
 
@@ -474,8 +543,14 @@ const styles = StyleSheet.create({
     maxWidth: 740,
     width: '100%',
     alignSelf: 'center',
-    gap: SPACING.md,
     paddingBottom: SPACING.xxl,
+  },
+  headerContainer: {
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  listSeparator: {
+    height: SPACING.md,
   },
   center: {
     flex: 1,
@@ -652,9 +727,6 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: COLORS.amberBright,
-  },
-  brandsList: {
-    gap: SPACING.md,
   },
   brandSection: {
     borderRadius: RADIUS.xl + 2,
