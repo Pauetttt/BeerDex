@@ -15,7 +15,7 @@
 - 🎴 **Cartas 3D estilo Códice Medieval:**
   Fichas coleccionables interactivas con filigrana botánica de lúpulo y cebada, reverso con la *Crónica Cervecera*, estilo, graduación, valoración, zoom en tu foto personal e historia completa deslizable en cada marca.
 - 📚 **Catálogo Oficial:**
-  **41 marcas** y **559 cervezas** (nacionales, regionales e internacionales, incluyendo la gama completa de *El Águila*) en formatos `botellín`, `lata` y `litrona`, con resolución auxiliar vía Open Food Facts y sugerencias de catálogo desde el escáner.
+  **41 marcas** y **559 cervezas** (nacionales, regionales e internacionales) en formatos `botellín`, `lata` y `litrona`, con resolución auxiliar vía Open Food Facts y sugerencias de catálogo desde el escáner.
 - 🏆 **110 Logros y Personalización:**
   Desbloquea **39 títulos**, **38 iconos 3D**, **13 marcos**, **50 cosméticos**, estilos de carta y temas de color (incluidos los 10 logros de la categoría *Tabernas y Hermandad*).
 - 🪙 **Economía de Chapas, La Bodega y Tesorería:**
