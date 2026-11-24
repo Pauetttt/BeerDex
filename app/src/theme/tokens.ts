@@ -36,7 +36,7 @@ export const COLORS = {
 
 export const FONTS = {
   brand: Platform.select({
-    web: '"UnifrakturMaguntia", "Outfit", serif',
+    web: '"Grenze Gotisch", "Outfit", serif',
     default: undefined,
   }),
   display: Platform.select({

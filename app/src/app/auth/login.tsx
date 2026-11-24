@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     color: COLORS.amberBright,
     fontFamily: FONTS.brand,
     fontSize: 42,
-    fontWeight: '400',
+    fontWeight: '800',
     letterSpacing: 0.6,
   },
   brandSub: {

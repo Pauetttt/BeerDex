@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
     color: COLORS.amberBright,
     fontFamily: FONTS.brand,
     fontSize: 38,
-    fontWeight: '400',
+    fontWeight: '800',
     letterSpacing: 0.5,
   },
   sub: {
