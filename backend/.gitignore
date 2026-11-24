@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+.vercel
+.pglite
+uploads/*
+!uploads/.gitkeep
+*.log
+.env*

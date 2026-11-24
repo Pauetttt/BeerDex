@@ -1,0 +1,52 @@
+name: BeerDex CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend:
+    name: Backend Typecheck, Build, Seed & Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run seed
+      - run: npm test
+
+  frontend-pwa:
+    name: Frontend Typecheck & Expo PWA Export
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: EXPO_NO_TELEMETRY=1 npx expo export --platform web
+      - name: Verify PWA HTML hydration and offline assets
+        run: |
+          test -f dist/index.html
+          test -f dist/manifest.json
+          test -f dist/sw.js
+          grep -q 'react-native-stylesheet' dist/index.html
+          grep -q '<script defer' dist/index.html
+          grep -q '/manifest.json' dist/index.html

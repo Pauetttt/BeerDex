@@ -1,0 +1,10 @@
+node_modules
+dist
+.pglite
+uploads
+tests
+vitest.config.ts
+.env
+.env.local
+.env.*.local
+*.log

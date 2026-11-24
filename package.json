@@ -1,0 +1,18 @@
+{
+  "name": "beerdex-cloudflare",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "EXPO_PUBLIC_API_URL=/api npm --prefix app run export:web",
+    "build:cf": "npm run build:web && cf build",
+    "dev:cf": "cf dev",
+    "deploy:cf": "npm run build:web && cf deploy",
+    "test:backend": "npm --prefix backend test"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^2.0.0-rc.4",
+    "cf": "^1.0.0-rc.4",
+    "vite": "^8.3.8"
+  }
+}

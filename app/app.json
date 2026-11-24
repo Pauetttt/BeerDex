@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "BeerDex",
+    "slug": "beerdex",
+    "scheme": "beerdex",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#120E0B"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.beerdex.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Permitir a BeerDex usar la cámara para escanear códigos de barras y hacer fotos de tus cervezas."
+      }
+    },
+    "android": {
+      "package": "com.beerdex.app",
+      "permissions": ["CAMERA"],
+      "adaptiveIcon": {
+        "backgroundColor": "#120E0B",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir a BeerDex usar la cámara para escanear códigos de barras y hacer fotos de tus cervezas."
+        }
+      ]
+    ]
+  }
+}
