@@ -2,7 +2,11 @@ import http from 'node:http';
 import { env as cfEnv } from 'cloudflare:workers';
 import { handleAsNodeRequest } from 'cloudflare:node';
 import { app } from '../backend/src/app';
-import { setRuntimeBindings, type R2BucketLike } from '../backend/src/config/runtimeBindings';
+import {
+  setRuntimeBindings,
+  type AiBindingLike,
+  type R2BucketLike,
+} from '../backend/src/config/runtimeBindings';
 
 const R2_PHOTO_KEY_REGEX = /^photos\/[a-zA-Z0-9._-]+$/;
 
@@ -11,6 +15,7 @@ function bindWorkerEnv(runtimeEnv: unknown): void {
   setRuntimeBindings({
     getEnv: () => record,
     getR2Bucket: () => (record.PHOTOS_BUCKET as R2BucketLike | undefined) ?? null,
+    getAiBinding: () => (record.AI as AiBindingLike | undefined) ?? null,
   });
 }
 

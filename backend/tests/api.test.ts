@@ -12,7 +12,7 @@ process.env.JWT_REFRESH_SECRET = 'test_refresh_secret';
 
 import { app } from '../src/app';
 import { env } from '../src/config/env';
-import { R2BucketLike, setRuntimeBindings } from '../src/config/runtimeBindings';
+import { AiBindingLike, R2BucketLike, setRuntimeBindings } from '../src/config/runtimeBindings';
 import { closeDb, getDb, initDb, schema } from '../src/db';
 import { importCatalogEntries, parseCatalogCsv } from '../src/db/importCatalog';
 import {
@@ -1239,6 +1239,80 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       await deleteStoredPhoto(uploadedUrl);
       expect(r2Objects.has(expectedKey)).toBe(false);
     } finally {
+      setRuntimeBindings(null);
+    }
+  });
+
+  it('valida imágenes con Cloudflare Workers AI cuando env.AI está disponible y reporta antiCheat en /api/health', async () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    let nextAiPayload: unknown = {};
+    const calls: Array<{ model: string; input: Record<string, unknown> }> = [];
+    const mockAi: AiBindingLike = {
+      async run(model, input) {
+        calls.push({ model, input });
+        return nextAiPayload;
+      },
+    };
+
+    setRuntimeBindings({
+      getEnv: () => ({
+        NODE_ENV: process.env.NODE_ENV,
+        JWT_SECRET: process.env.JWT_SECRET,
+        JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+        ANTI_CHEAT_STRICT: 'true',
+      }),
+      getAiBinding: () => mockAi,
+    });
+
+    try {
+      const healthRes = await request(app).get('/api/health');
+      expect(healthRes.status).toBe(200);
+      expect(healthRes.body.antiCheat).toBe('workers-ai');
+
+      process.env.NODE_ENV = 'production';
+
+      // 1) Pantalla detectada -> bloqueado
+      nextAiPayload = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                es_pantalla: true,
+                tipo_detectado: 'pantalla',
+                confianza: 0.98,
+                motivo: 'Monitor detectado',
+              }),
+            },
+          },
+        ],
+      };
+      const blocked = await verifyBeerFrameWithGemini({ base64: TINY_JPEG_BASE64 });
+      expect(blocked.allowed).toBe(false);
+      expect(blocked.es_pantalla).toBe(true);
+      expect(blocked.tipo_detectado).toBe('pantalla');
+      expect(calls[0]?.model).toBe('@cf/google/gemma-4-26b-a4b-it');
+
+      // 2) Botella real -> permitido
+      nextAiPayload = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                es_pantalla: false,
+                tipo_detectado: 'botella',
+                confianza: 0.96,
+                motivo: 'Botella real sobre mesa',
+              }),
+            },
+          },
+        ],
+      };
+      const allowed = await verifyBeerFrameWithGemini({ base64: TINY_JPEG_BASE64 });
+      expect(allowed.allowed).toBe(true);
+      expect(allowed.es_pantalla).toBe(false);
+      expect(allowed.tipo_detectado).toBe('botella');
+    } finally {
+      process.env.NODE_ENV = prevNodeEnv;
       setRuntimeBindings(null);
     }
   });

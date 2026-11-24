@@ -9,7 +9,7 @@
 ## ✨ Características Principales
 
 - ⚡ **Escáner en tiempo real a 30 FPS + IA Antitrampas:**
-  Detección instantánea de códigos EAN-8 / EAN-13 / UPC / GTIN-14 desde la cámara del móvil (`BarcodeDetector` / ZXing) con feedback háptico/sonoro, captura automática del fotograma y validación visual con **Google AI Studio (Gemini Flash)** para bloquear escaneos de pantallas o folios impresos.
+  Detección instantánea de códigos EAN-8 / EAN-13 / UPC / GTIN-14 desde la cámara del móvil (`BarcodeDetector` / ZXing) con feedback háptico/sonoro, captura automática del fotograma y validación visual con **Cloudflare Workers AI (`@cf/google/gemma-4-26b-a4b-it`)** (o Gemini Flash si se configura `GEMINI_API_KEY`) para bloquear escaneos de pantallas o folios impresos.
 - 🎴 **Cartas 3D estilo Códice Medieval:**
   Fichas coleccionables interactivas con filigrana botánica de lúpulo y cebada, reverso con la *Crónica Cervecera*, estilo, graduación, valoración y zoom en tu foto personal.
 - 📚 **Catálogo Oficial:**
@@ -30,7 +30,7 @@
 - **Backend API:** Express + TypeScript + Drizzle ORM + Zod + Web Crypto `PBKDF2-SHA256`
 - **Base de Datos:** Neon PostgreSQL (`aws:eu-central-1`, con `pgcrypto` para migración transparente de hashes)
 - **Almacenamiento de Fotos:** Vercel Blob (o Cloudflare R2 / Cloudinary)
-- **IA Antitrampas:** Google AI Studio (`gemini-2.5-flash`)
+- **IA Antitrampas:** Cloudflare Workers AI (`@cf/google/gemma-4-26b-a4b-it`, sin API key externa) + soporte opcional de Google AI Studio (`GEMINI_API_KEY`)
 
 ---
 

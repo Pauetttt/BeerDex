@@ -3,7 +3,7 @@ import cors from 'cors';
 import express, { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import multer from 'multer';
-import { env } from './config/env';
+import { env, isGeminiConfigured, isWorkersAiConfigured } from './config/env';
 import { isWorkersRuntime } from './config/runtimeBindings';
 import { getDbDriver, initDb } from './db';
 import achievementsRouter from './routes/achievements';
@@ -75,6 +75,11 @@ app.get('/api/health', (_req, res) => {
     service: 'beerdex-api',
     driver: getDbDriver(),
     storage: getActiveStorageProvider(),
+    antiCheat: isGeminiConfigured()
+      ? 'gemini'
+      : isWorkersAiConfigured()
+        ? 'workers-ai'
+        : 'disabled',
   });
 });
 

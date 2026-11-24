@@ -20,6 +20,8 @@ export default defineConfig({
       traces: { enabled: true, headSamplingRate: 0.1 },
     },
     env: {
+      AI: bindings.ai(),
+      ANTI_CHEAT_STRICT: bindings.text('true'),
       DATABASE_URL: bindings.secret(),
       JWT_SECRET: bindings.secret(),
       JWT_REFRESH_SECRET: bindings.secret(),

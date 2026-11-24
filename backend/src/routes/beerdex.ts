@@ -925,11 +925,13 @@ router.post(
       });
     }
 
-    const scanVerificationToken = signScanVerificationToken({
-      userId,
-      allowedBrandIds,
-      barcode: cleanCode,
-    });
+    const scanVerificationToken = !antiCheat.skipped
+      ? signScanVerificationToken({
+          userId,
+          allowedBrandIds,
+          barcode: cleanCode,
+        })
+      : undefined;
 
     res.json({
       ...payload,

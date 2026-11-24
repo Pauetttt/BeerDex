@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
+import { getAiBinding } from '../config/runtimeBindings';
 import { HttpError } from '../utils/httpError';
 
 export type DetectedScanObject =
@@ -44,8 +45,8 @@ Debes responder SIEMPRE con JSON estricto siguiendo el esquema:
 }
 
 Reglas:
-- Devuelve "es_pantalla": true cuando el código de barras se esté escaneando desde una pantalla digital (portátil, monitor, móvil, tablet, televisor, ventana de navegador, bordes de pantalla/teclado, rejilla de píxeles o efecto moiré) o desde un folio/papel plano impreso o recorte plano sobre una superficie sin envase tridimensional real. Usa "tipo_detectado": "pantalla" o "papel_plano" según corresponda.
-- Devuelve "es_pantalla": false cuando se trate de una cerveza real en formato físico tridimensional: botella de vidrio, lata metálica, litrona, caja de cervezas o pack real (sostenido en la mano, sobre una mesa, barra o estantería, aunque sea un plano cercano de la etiqueta/código o haya poca luz).`;
+- Devuelve "es_pantalla": true cuando el código de barras o la imagen se esté escaneando desde una pantalla digital (monitor de ordenador, portátil, smartphone, tablet, televisor, ventana o pestañas de navegador, cursor de ratón, fondo luminoso de página web o visor de imágenes mostrando una foto/código, bordes o marco del monitor/teclado, rejilla de píxeles LCD, efecto moiré o brillo de pantalla retroiluminada) o desde un folio/papel plano impreso o recorte plano sobre una superficie sin envase tridimensional real. Usa "tipo_detectado": "pantalla" o "papel_plano" según corresponda.
+- Devuelve "es_pantalla": false únicamente cuando se trate de una cerveza real en formato físico tridimensional: botella de vidrio, lata metálica, litrona, caja de cervezas o pack real (sostenido en la mano, o sobre una mesa, barra, nevera o estantería real, aunque sea un plano cercano de la etiqueta/código o haya poca luz).`;
 
 type TestEvaluator = (img: {
   mimeType: string;
@@ -138,9 +139,47 @@ export function buildAntiCheatMessage(result: AntiCheatResult): string {
   return 'Aviso antitrampas: hemos detectado que estás escaneando una pantalla en lugar de una cerveza real (botella, lata, litrona, caja o pack).';
 }
 
+/** Extrae texto JSON de la respuesta de Cloudflare Workers AI (OpenAI chat completions o legacy response). */
+export function extractWorkersAiText(rawResponse: unknown): string {
+  if (!rawResponse || typeof rawResponse !== 'object') {
+    if (typeof rawResponse === 'string') return rawResponse.trim();
+    throw new Error('Respuesta vacía de Workers AI.');
+  }
+
+  const record = rawResponse as {
+    choices?: Array<{
+      message?: {
+        content?: string | Array<{ type?: string; text?: string }>;
+      };
+    }>;
+    response?: unknown;
+  };
+
+  const content = record.choices?.[0]?.message?.content;
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    const joined = content
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .join('')
+      .trim();
+    if (joined) return joined;
+  }
+
+  if (record.response !== undefined) {
+    if (typeof record.response === 'string') {
+      return record.response.trim();
+    }
+    return JSON.stringify(record.response);
+  }
+
+  throw new Error('Workers AI devolvió una respuesta sin contenido JSON.');
+}
+
 /**
- * Envía el fotograma capturado a Gemini Flash (Google AI Studio) para validar
- * que no sea una pantalla digital ni un folio plano.
+ * Envía el fotograma capturado a Gemini Flash (si hay GEMINI_API_KEY) o
+ * Cloudflare Workers AI (@cf/google/gemma-4-26b-a4b-it) para validar que no sea pantalla ni papel plano.
  */
 export async function verifyBeerFrameWithGemini(imageInput: {
   base64?: string;
@@ -173,122 +212,194 @@ export async function verifyBeerFrameWithGemini(imageInput: {
     };
   }
 
-  if (!env.gemini.apiKey) {
-    if (env.gemini.strict) {
-      throw new HttpError(
-        503,
-        'El sistema antitrampas no está configurado en el servidor.'
+  // 1) Proveedor prioritario opcional: Google AI Studio (si GEMINI_API_KEY está configurada)
+  if (env.gemini.apiKey) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        env.gemini.model
+      )}:generateContent`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': env.gemini.apiKey,
+        },
+        signal: AbortSignal.timeout(7000),
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: ANTI_CHEAT_PROMPT },
+                {
+                  inlineData: {
+                    mimeType: payloadImage.mimeType,
+                    data: payloadImage.data,
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: 'application/json',
+            thinkingConfig: {
+              thinkingBudget: 0,
+            },
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                es_pantalla: { type: 'BOOLEAN' },
+                tipo_detectado: {
+                  type: 'STRING',
+                  enum: [
+                    'botella',
+                    'lata',
+                    'litrona',
+                    'caja',
+                    'pack',
+                    'pantalla',
+                    'papel_plano',
+                    'otro',
+                  ],
+                },
+                confianza: { type: 'NUMBER' },
+                motivo: { type: 'STRING' },
+              },
+              required: ['es_pantalla', 'tipo_detectado', 'confianza', 'motivo'],
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status} en Gemini: ${errBody.slice(0, 200)}`);
+      }
+
+      const data = (await response.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{ text?: string }>;
+          };
+        }>;
+      };
+
+      const rawText = data.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text || '')
+        .join('')
+        .trim();
+
+      if (!rawText) {
+        throw new Error('Gemini devolvió una respuesta vacía sin texto JSON.');
+      }
+
+      return parseGeminiAntiCheatResponse(rawText);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: 'anti_cheat_error',
+          provider: 'gemini',
+          model: env.gemini.model,
+          error: err instanceof Error ? err.message : String(err),
+        })
       );
+      if (env.gemini.strict) {
+        throw new HttpError(
+          503,
+          'No pudimos verificar la autenticidad de la cerveza. Inténtalo de nuevo en unos segundos.'
+        );
+      }
+      return {
+        allowed: true,
+        es_pantalla: false,
+        tipo_detectado: 'otro',
+        confianza: 0,
+        motivo: 'Validación visual omitida temporalmente por error del proveedor IA',
+        skipped: true,
+      };
     }
-    console.warn('[AntiCheat] GEMINI_API_KEY no configurada; omitiendo validación visual.');
-    return {
-      allowed: true,
-      es_pantalla: false,
-      tipo_detectado: 'otro',
-      confianza: 0,
-      motivo: 'Validación visual pendiente de GEMINI_API_KEY',
-      skipped: true,
-    };
   }
 
-  try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      env.gemini.model
-    )}:generateContent`;
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': env.gemini.apiKey,
-      },
-      signal: AbortSignal.timeout(7000),
-      body: JSON.stringify({
-        contents: [
+  // 2) Proveedor nativo gratuito en Cloudflare Workers: Workers AI Vision (@cf/google/gemma-4-26b-a4b-it)
+  const ai = getAiBinding();
+  if (ai) {
+    try {
+      const rawResponse = await ai.run(env.workersAi.model, {
+        messages: [
           {
-            parts: [
-              { text: ANTI_CHEAT_PROMPT },
+            role: 'user',
+            content: [
+              { type: 'text', text: ANTI_CHEAT_PROMPT },
               {
-                inlineData: {
-                  mimeType: payloadImage.mimeType,
-                  data: payloadImage.data,
+                type: 'image_url',
+                image_url: {
+                  url: `data:${payloadImage.mimeType};base64,${payloadImage.data}`,
                 },
               },
             ],
           },
         ],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          thinkingConfig: {
-            thinkingBudget: 0,
-          },
-          responseSchema: {
-            type: 'OBJECT',
-            properties: {
-              es_pantalla: { type: 'BOOLEAN' },
-              tipo_detectado: {
-                type: 'STRING',
-                enum: [
-                  'botella',
-                  'lata',
-                  'litrona',
-                  'caja',
-                  'pack',
-                  'pantalla',
-                  'papel_plano',
-                  'otro',
-                ],
-              },
-              confianza: { type: 'NUMBER' },
-              motivo: { type: 'STRING' },
-            },
-            required: ['es_pantalla', 'tipo_detectado', 'confianza', 'motivo'],
-          },
-        },
-      }),
-    });
+        temperature: 0,
+        max_completion_tokens: 220,
+        chat_template_kwargs: { enable_thinking: false },
+        response_format: { type: 'json_object' },
+      });
 
-    if (!response.ok) {
-      const errBody = await response.text().catch(() => '');
-      throw new Error(`HTTP ${response.status} en Gemini: ${errBody.slice(0, 200)}`);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    const rawText = data.candidates?.[0]?.content?.parts
-      ?.map((part) => part.text || '')
-      .join('')
-      .trim();
-
-    if (!rawText) {
-      throw new Error('Gemini devolvió una respuesta vacía sin texto JSON.');
-    }
-
-    return parseGeminiAntiCheatResponse(rawText);
-  } catch (err) {
-    console.error('[AntiCheat] Error al consultar Gemini:', err);
-    if (env.gemini.strict) {
-      throw new HttpError(
-        503,
-        'No pudimos verificar la autenticidad de la cerveza. Inténtalo de nuevo en unos segundos.'
+      const rawText = extractWorkersAiText(rawResponse);
+      const result = parseGeminiAntiCheatResponse(rawText);
+      console.log(
+        JSON.stringify({
+          event: 'anti_cheat_decision',
+          provider: 'workers-ai',
+          model: env.workersAi.model,
+          es_pantalla: result.es_pantalla,
+          tipo_detectado: result.tipo_detectado,
+          confianza: result.confianza,
+        })
       );
+      return result;
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          event: 'anti_cheat_error',
+          provider: 'workers-ai',
+          model: env.workersAi.model,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      );
+      if (env.gemini.strict) {
+        throw new HttpError(
+          503,
+          'No pudimos verificar la autenticidad de la cerveza. Inténtalo de nuevo en unos segundos.'
+        );
+      }
+      return {
+        allowed: true,
+        es_pantalla: false,
+        tipo_detectado: 'otro',
+        confianza: 0,
+        motivo: 'Validación visual omitida temporalmente por error del proveedor IA',
+        skipped: true,
+      };
     }
-    return {
-      allowed: true,
-      es_pantalla: false,
-      tipo_detectado: 'otro',
-      confianza: 0,
-      motivo: 'Validación visual omitida temporalmente por error del proveedor IA',
-      skipped: true,
-    };
   }
+
+  if (env.gemini.strict) {
+    throw new HttpError(
+      503,
+      'El sistema antitrampas no está configurado en el servidor.'
+    );
+  }
+  console.warn('[AntiCheat] Ni GEMINI_API_KEY ni Workers AI configurados; omitiendo validación visual.');
+  return {
+    allowed: true,
+    es_pantalla: false,
+    tipo_detectado: 'otro',
+    confianza: 0,
+    motivo: 'Validación visual pendiente de configuración IA',
+    skipped: true,
+  };
 }
 
 interface ScanVerificationPayload {

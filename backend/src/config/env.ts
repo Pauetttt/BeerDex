@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import {
+  getAiBinding,
   getR2Bucket,
   getRuntimeEnvValue,
   isWorkersRuntime,
@@ -81,7 +82,16 @@ export const env = {
       return readEnv('ANTI_CHEAT_STRICT') === 'true';
     },
   },
+  workersAi: {
+    get model(): string {
+      return (readEnv('WORKERS_AI_VISION_MODEL') || '@cf/google/gemma-4-26b-a4b-it').trim();
+    },
+  },
 };
+
+export function isWorkersAiConfigured(): boolean {
+  return Boolean(getAiBinding());
+}
 
 export function isR2Configured(): boolean {
   return Boolean(getR2Bucket());

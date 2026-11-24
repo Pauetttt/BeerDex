@@ -23,14 +23,19 @@ export interface R2BucketLike {
   delete(keys: string | string[]): Promise<void>;
 }
 
+export interface AiBindingLike {
+  run(model: string, input: Record<string, unknown>): Promise<unknown>;
+}
+
 export interface RuntimeBindingsProvider {
   getEnv?: () => Record<string, unknown>;
   getR2Bucket?: () => R2BucketLike | null;
+  getAiBinding?: () => AiBindingLike | null;
 }
 
 let activeProvider: RuntimeBindingsProvider | null = null;
 
-/** Registra proveedores dinámicos de bindings (ej. Cloudflare Workers env y R2). */
+/** Registra proveedores dinámicos de bindings (ej. Cloudflare Workers env, R2 y Workers AI). */
 export function setRuntimeBindings(provider: RuntimeBindingsProvider | null): void {
   activeProvider = provider;
 }
@@ -54,6 +59,15 @@ export function getR2Bucket(): R2BucketLike | null {
   if (!activeProvider?.getR2Bucket) return null;
   try {
     return activeProvider.getR2Bucket() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function getAiBinding(): AiBindingLike | null {
+  if (!activeProvider?.getAiBinding) return null;
+  try {
+    return activeProvider.getAiBinding() ?? null;
   } catch {
     return null;
   }
