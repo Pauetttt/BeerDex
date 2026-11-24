@@ -8,6 +8,7 @@ import {
   clampRelicLevel,
   RelicPowerDto,
 } from './relicService';
+import { evaluateTabernaAchievements } from './tabernaService';
 
 export interface CosmeticDto {
   id: number;
@@ -133,6 +134,7 @@ export async function backfillUserChapasIfNeeded(
     .where(eq(schema.users.id, userId));
 
   await evaluateAchievements(db, userId);
+  await evaluateTabernaAchievements(db, userId);
 }
 
 export async function getUserAchievementsList(
@@ -144,6 +146,7 @@ export async function getUserAchievementsList(
   totalCount: number;
 }> {
   await evaluateAchievements(db, userId);
+  await evaluateTabernaAchievements(db, userId);
 
   const [allAchievements, userProgress, allTitles, allIcons, allCosmetics] =
     await Promise.all([
@@ -221,6 +224,7 @@ export async function getFullUserProfile(
 
   if (options.evaluate) {
     await evaluateAchievements(db, userId);
+  await evaluateTabernaAchievements(db, userId);
   } else {
     await ensureUserAchievements(db, userId);
   }

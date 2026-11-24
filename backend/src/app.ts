@@ -12,6 +12,7 @@ import beerdexRouter from './routes/beerdex';
 import friendsRouter from './routes/friends';
 import meRouter from './routes/me';
 import shopRouter from './routes/shop';
+import tabernasRouter from './routes/tabernas';
 import { getActiveStorageProvider } from './services/storageService';
 import { HttpError } from './utils/httpError';
 
@@ -87,6 +88,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
 app.use('/api/achievements', achievementsRouter);
 app.use('/api/shop', shopRouter);
+app.use('/api/tabernas', tabernasRouter);
 app.use('/api', beerdexRouter);
 app.use('/api', friendsRouter);
 

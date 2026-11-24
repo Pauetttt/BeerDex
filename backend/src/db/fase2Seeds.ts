@@ -86,6 +86,8 @@ export const ICONS_SEED: IconSeedItem[] = [
   { id: 35, name: 'Monje Maestro', imageUrl: 'icon://shop-brew-monk', isDefault: false, source: 'shop', priceChapas: 650, unlockAchievementId: null },
   { id: 36, name: 'Jarra Vikinga', imageUrl: 'icon://shop-viking-horn', isDefault: false, source: 'shop', priceChapas: 700, unlockAchievementId: null },
   { id: 37, name: 'Capitán de la Espuma', imageUrl: 'icon://shop-foam-captain', isDefault: false, source: 'shop', priceChapas: 800, unlockAchievementId: null },
+  // Tabernas y Hermandad (38)
+  { id: 38, name: 'Jarra de la Hermandad', imageUrl: 'icon://tavern-brotherhood', isDefault: false, source: 'achievement', priceChapas: null, unlockAchievementId: 102 },
 ];
 
 export const TITLES_SEED: TitleSeedItem[] = [
@@ -130,6 +132,10 @@ export const TITLES_SEED: TitleSeedItem[] = [
   { id: 34, name: 'Leyenda de Barra', isDefault: false, source: 'shop', priceChapas: 800, unlockAchievementId: null },
   { id: 35, name: 'Soberano del Barril', isDefault: false, source: 'shop', priceChapas: 900, unlockAchievementId: null },
   { id: 36, name: 'Inmortal de la Espuma', isDefault: false, source: 'shop', priceChapas: 1000, unlockAchievementId: null },
+  // Tabernas y Hermandad (37-39)
+  { id: 37, name: 'Parroquiano', isDefault: false, source: 'achievement', priceChapas: null, unlockAchievementId: 101 },
+  { id: 38, name: 'Cantinero Maestro', isDefault: false, source: 'achievement', priceChapas: null, unlockAchievementId: 105 },
+  { id: 39, name: 'Señor del Barril', isDefault: false, source: 'achievement', priceChapas: null, unlockAchievementId: 109 },
 ];
 
 export const COSMETICS_SEED: CosmeticSeedItem[] = [
@@ -818,6 +824,36 @@ export const COSMETICS_SEED: CosmeticSeedItem[] = [
       gradientBtn: ['#E9D5FF', '#A855F7', '#7E22CE'],
     }),
   },
+  // ================= TABERNAS Y HERMANDAD (49..50) =================
+  {
+    id: 49,
+    code: 'frame_tavern_wood',
+    type: 'frame',
+    name: 'Marco Madera de Taberna',
+    description: 'Aro de roble de barra con remaches de latón, forjado en misiones impecables.',
+    previewKey: 'frame_tavern_wood',
+    source: 'achievement',
+    priceChapas: null,
+    unlockAchievementId: 107,
+    metadataJson: JSON.stringify({ borderColor: '#8B5A2B', secondaryColor: '#E0A458', glowColor: 'rgba(139,90,43,0.45)', ringStyle: 'double' }),
+  },
+  {
+    id: 50,
+    code: 'card_royal_banner',
+    type: 'card_style',
+    name: 'Estandarte Real',
+    description: 'Terciopelo carmesí con hilo de oro, reservado a las Tabernas de élite.',
+    previewKey: 'card_royal_banner',
+    source: 'achievement',
+    priceChapas: null,
+    unlockAchievementId: 110,
+    metadataJson: JSON.stringify({
+      frontColors: ['#4A0E17', '#22060B'],
+      backColors: ['#3D0B13', '#1A0408'],
+      borderColor: 'rgba(255, 208, 102, 0.7)',
+      accentColor: '#FFD066',
+    }),
+  },
 ];
 
 export const ACHIEVEMENTS_SEED: AchievementSeedItem[] = [
@@ -837,7 +873,7 @@ export const ACHIEVEMENTS_SEED: AchievementSeedItem[] = [
   { id: 13, code: 'recta_final', name: 'Recta Final', description: 'Registra 450 cervezas distintas.', category: 'Colección de Cervezas', targetValue: 450, rewardChapas: 350, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: 26 },
   { id: 14, code: 'medio_millar', name: 'Medio Millar', description: 'Registra 500 cervezas distintas.', category: 'Colección de Cervezas', targetValue: 500, rewardChapas: 450, rewardTitleId: 13, rewardIconId: null, rewardCosmeticId: null },
   { id: 15, code: 'casi_completo', name: 'Casi Completo', description: 'Registra 525 cervezas distintas.', category: 'Colección de Cervezas', targetValue: 525, rewardChapas: 500, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: 3 },
-  { id: 16, code: 'coleccion_absoluta', name: 'Colección Absoluta', description: 'Registra todas las cervezas del catálogo.', category: 'Colección de Cervezas', targetValue: 557, rewardChapas: 800, rewardTitleId: 14, rewardIconId: 16, rewardCosmeticId: null },
+  { id: 16, code: 'coleccion_absoluta', name: 'Colección Absoluta', description: 'Registra todas las cervezas del catálogo.', category: 'Colección de Cervezas', targetValue: 559, rewardChapas: 800, rewardTitleId: 14, rewardIconId: 16, rewardCosmeticId: null },
 
   // B. Marcas Completadas y Descubrimiento (17-32)
   { id: 17, code: 'primera_casa', name: 'Primera Casa', description: 'Completa el 100 % de 1 marca.', category: 'Marcas y Descubrimiento', targetValue: 1, rewardChapas: 50, rewardTitleId: null, rewardIconId: 8, rewardCosmeticId: null },
@@ -936,4 +972,15 @@ export const ACHIEVEMENTS_SEED: AchievementSeedItem[] = [
 
   // H. Logro Definitivo (100)
   { id: 100, code: 'dios_de_la_beerdex', name: 'Dios de la BeerDex', description: 'Completa los otros 99 logros.', category: 'Logro Definitivo', targetValue: 99, rewardChapas: 1500, rewardTitleId: 10, rewardIconId: 13, rewardCosmeticId: 20 },
+  // I. Tabernas y Hermandad (101-110) — no cuentan para «Dios de la BeerDex»
+  { id: 101, code: 'ronda_de_bienvenida', name: 'Ronda de Bienvenida', description: 'Únete a una Taberna o funda la tuya.', category: 'Tabernas y Hermandad', targetValue: 1, rewardChapas: 150, rewardTitleId: 37, rewardIconId: null, rewardCosmeticId: null },
+  { id: 102, code: 'tabernero_mayor', name: 'Tabernero Mayor', description: 'Funda una Taberna y llega a 5 miembros.', category: 'Tabernas y Hermandad', targetValue: 5, rewardChapas: 300, rewardTitleId: null, rewardIconId: 38, rewardCosmeticId: null },
+  { id: 103, code: 'hermandad_completa', name: 'Hermandad Completa', description: 'Forma parte de una Taberna con 10 miembros.', category: 'Tabernas y Hermandad', targetValue: 10, rewardChapas: 250, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: null },
+  { id: 104, code: 'primera_linea', name: 'Primera Línea', description: 'Aporta una casilla a una línea completada del Bingo de tu Taberna.', category: 'Tabernas y Hermandad', targetValue: 1, rewardChapas: 200, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: null },
+  { id: 105, code: 'bingo', name: '¡BINGO!', description: 'Tu Taberna completa un cartón de Bingo.', category: 'Tabernas y Hermandad', targetValue: 1, rewardChapas: 600, rewardTitleId: 38, rewardIconId: null, rewardCosmeticId: null },
+  { id: 106, code: 'jornada_de_taberna', name: 'Jornada de Taberna', description: 'Tu Taberna completa 3 minijuegos mensuales (meses distintos).', category: 'Tabernas y Hermandad', targetValue: 3, rewardChapas: 500, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: null },
+  { id: 107, code: 'mision_impecable', name: 'Misión Impecable', description: 'Completa el minijuego mensual al 100 % con todos los miembros participando.', category: 'Tabernas y Hermandad', targetValue: 1, rewardChapas: 1200, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: 49 },
+  { id: 108, code: 'taberna_en_auge', name: 'Taberna en Auge', description: 'Tu Taberna alcanza el nivel 5.', category: 'Tabernas y Hermandad', targetValue: 5, rewardChapas: 400, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: null },
+  { id: 109, code: 'bastion_cervecero', name: 'Bastión Cervecero', description: 'Tu Taberna alcanza el nivel 10.', category: 'Tabernas y Hermandad', targetValue: 10, rewardChapas: 1000, rewardTitleId: 39, rewardIconId: null, rewardCosmeticId: null },
+  { id: 110, code: 'elite_del_ranking', name: 'Élite del Ranking', description: 'Tu Taberna termina un mes en el Top 3 del ranking mensual.', category: 'Tabernas y Hermandad', targetValue: 1, rewardChapas: 2500, rewardTitleId: null, rewardIconId: null, rewardCosmeticId: 50 },
 ];

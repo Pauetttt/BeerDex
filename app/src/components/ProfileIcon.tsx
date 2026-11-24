@@ -63,6 +63,9 @@ const ICON_ASSETS: Record<string, ImageSourcePropType> = {
   'icon://shop-brew-monk': require('../../assets/icons-profile/shop-brew-monk.png'),
   'icon://shop-viking-horn': require('../../assets/icons-profile/shop-viking-horn.png'),
   'icon://shop-foam-captain': require('../../assets/icons-profile/shop-foam-captain.png'),
+
+  // Tabernas y Hermandad (1)
+  'icon://tavern-brotherhood': require('../../assets/icons-profile/tavern-brotherhood.png'),
 };
 
 const FRAME_ASSETS: Record<string, ImageSourcePropType> = {
@@ -161,6 +164,12 @@ const FRAME_PRESETS: Record<
     secondaryColor: '#F0ABFC',
     glowColor: 'rgba(103,232,249,0.58)',
     ringStyle: 'prism',
+  },
+  frame_tavern_wood: {
+    borderColor: '#8B5A2B',
+    secondaryColor: '#E0A458',
+    glowColor: 'rgba(139,90,43,0.45)',
+    ringStyle: 'double',
   },
 };
 

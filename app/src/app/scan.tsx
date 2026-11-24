@@ -368,6 +368,10 @@ export default function ScanRegisterScreen() {
       if (res.achievementChapas && res.achievementChapas > 0) {
         parts.push(`+${res.achievementChapas} por logros`);
       }
+      if (res.tabernaUpdates?.length) {
+        const names = res.tabernaUpdates.map((t) => t.tabernaName).join(', ');
+        parts.push(`Aportada a Taberna: ${names}`);
+      }
 
       if (res.newlyUnlocked?.length) {
         showAchievements(res.newlyUnlocked);

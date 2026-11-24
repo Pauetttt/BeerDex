@@ -101,7 +101,7 @@ export interface BrandSeedInput {
   beers: BeerSeedItem[];
 }
 
-export const TOTAL_SEEDED_BEERS = 557;
+export const TOTAL_SEEDED_BEERS = 559;
 
 export const BRANDS_SEED: BrandSeedInput[] = [
   {
@@ -3096,7 +3096,9 @@ export const BRANDS_SEED: BrandSeedInput[] = [
         "name": "El Águila Dorada Lata",
         "format": "lata",
         "barcode": "8410590101230",
-        "extraBarcodes": [],
+        "extraBarcodes": [
+          "8411090115093"
+        ],
         "shortHistory": "La lager dorada madrileña El Águila en formato lata, con reflejos ambarinos, espuma consistente y delicadas notas cítricas de lúpulo Lemondrop.",
         "style": "Lager",
         "abv": "5.50",
@@ -3109,7 +3111,8 @@ export const BRANDS_SEED: BrandSeedInput[] = [
         "extraBarcodes": [
           "8410590110010",
           "8410590111086",
-          "8410590111208"
+          "8410590111208",
+          "8411090115161"
         ],
         "shortHistory": "Cerveza turbia inspirada en recetas de 1900 que conserva sus levaduras en suspensión; gírala suavemente antes de abrir para despertar aromas.",
         "style": "Lager",
@@ -3122,7 +3125,8 @@ export const BRANDS_SEED: BrandSeedInput[] = [
         "barcode": "8410590111031",
         "extraBarcodes": [
           "8410590111109",
-          "8410590000021"
+          "8410590000021",
+          "8411090115277"
         ],
         "shortHistory": "Versión en lata de El Águila Sin Filtrar, conservando la intensidad maltosa, frescura de levadura viva y amargor suave listos para cualquier ocasión.",
         "style": "Lager",
@@ -3143,10 +3147,32 @@ export const BRANDS_SEED: BrandSeedInput[] = [
         "name": "El Águila Sin Filtrar 0,0 Lata",
         "format": "lata",
         "barcode": "8410590310137",
-        "extraBarcodes": [],
+        "extraBarcodes": [
+          "8411090310207"
+        ],
         "shortHistory": "Lata de El Águila Sin Filtrar 0,0 %, manteniendo el cuerpo turbio característico, espuma densa y frescor cítrico con cero grados alcohólicos.",
         "style": "0,0%",
         "abv": "0.00",
+        "country": "España"
+      },
+      {
+        "name": "El Águila Sin Filtrar Limón Botellín",
+        "format": "botellin",
+        "barcode": "8411090617269",
+        "extraBarcodes": [],
+        "shortHistory": "Cerveza sin filtrar de El Águila combinada con zumo natural de limón, naranja, lima y acerola: refrescante, turbia y suave con 2,3 % vol.",
+        "style": "Lager",
+        "abv": "2.30",
+        "country": "España"
+      },
+      {
+        "name": "El Águila Sin Filtrar Limón Lata",
+        "format": "lata",
+        "barcode": "8411090617306",
+        "extraBarcodes": [],
+        "shortHistory": "Versión en lata de El Águila Sin Filtrar Limón, con levadura en suspensión y notas cítricas naturales de limón y lima, ligera y muy refrescante.",
+        "style": "Lager",
+        "abv": "2.30",
         "country": "España"
       }
     ]
@@ -6980,7 +7006,7 @@ export const GS1_PREFIX_TO_BRAND: Array<{
   { prefix: '8410105', brandName: 'Estrella Damm', defaultBeerName: 'Estrella Damm Mediterránea Botellín' },
   { prefix: '8410655', brandName: 'San Miguel', defaultBeerName: 'San Miguel Especial Lata' },
   { prefix: '8410261', brandName: 'San Miguel', defaultBeerName: 'San Miguel Especial Botellín' },
-  { prefix: '8411090', brandName: 'Cruzcampo', defaultBeerName: 'Cruzcampo Pilsen Lata' },
+  { prefix: '8411090', brandName: 'Cruzcampo', defaultBeerName: 'Cruzcampo Pilsen Lata', relatedBrandNames: ['El Águila'] },
   { prefix: '8410285', brandName: 'Cruzcampo', defaultBeerName: 'Cruzcampo Pilsen Botellín' },
   { prefix: '8410700', brandName: 'Ámbar', defaultBeerName: 'Ámbar Especial Botellín', relatedBrandNames: ['Moritz'] },
   { prefix: '8410709', brandName: 'Ámbar', defaultBeerName: 'Ámbar Export Botellín' },

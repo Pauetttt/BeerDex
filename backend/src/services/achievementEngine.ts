@@ -472,7 +472,9 @@ export async function evaluateAchievements(
   let totalChapasAwarded = 0;
   const activeRelics = await getActiveUserRelics(db, userId);
 
-  const first99 = allAchievements.filter((a) => a.id !== 100).sort((a, b) => a.id - b.id);
+  // Sólo los 99 logros originales cuentan para «Dios de la BeerDex» (#100).
+  // Los logros ≥101 (Tabernas y Hermandad) los gestiona tabernaService.
+  const first99 = allAchievements.filter((a) => a.id < 100).sort((a, b) => a.id - b.id);
   const ultimateAch = allAchievements.find((a) => a.id === 100);
 
   for (const ach of first99) {
@@ -617,6 +619,149 @@ export async function evaluateAchievements(
             }
           : null,
       });
+    }
+  }
+
+  if (totalChapasAwarded > 0) {
+    await db
+      .update(schema.users)
+      .set({
+        chapas: sql`${schema.users.chapas} + ${totalChapasAwarded}`,
+      })
+      .where(eq(schema.users.id, userId));
+  }
+
+  return newlyUnlocked;
+}
+
+/**
+ * Actualiza de forma monótona e idempotente un subconjunto de logros (p. ej. 101-110)
+ * otorgando sus recompensas exactamente una vez.
+ */
+export async function applyAchievementProgressUpdates(
+  db: AppDatabase,
+  userId: string,
+  achievementIds: number[],
+  rawProgressById: Record<number, number>
+): Promise<NewlyUnlockedAchievement[]> {
+  if (achievementIds.length === 0) return [];
+  await ensureUserAchievements(db, userId);
+
+  const [
+    targetAchievements,
+    allTitles,
+    allIcons,
+    allCosmetics,
+    existingRows,
+    activeRelics,
+  ] = await Promise.all([
+    db
+      .select()
+      .from(schema.achievements)
+      .where(inArray(schema.achievements.id, achievementIds)),
+    db.select().from(schema.titles),
+    db.select().from(schema.icons),
+    db.select().from(schema.cosmetics),
+    db
+      .select()
+      .from(schema.userAchievements)
+      .where(
+        and(
+          eq(schema.userAchievements.userId, userId),
+          inArray(schema.userAchievements.achievementId, achievementIds)
+        )
+      ),
+    getActiveUserRelics(db, userId),
+  ]);
+
+  if (targetAchievements.length === 0) return [];
+
+  const titleById = new Map(allTitles.map((t) => [t.id, t]));
+  const iconById = new Map(allIcons.map((i) => [i.id, i]));
+  const cosmeticById = new Map(allCosmetics.map((c) => [c.id, c]));
+  const existingByAchId = new Map(existingRows.map((r) => [r.achievementId, r]));
+
+  const now = new Date();
+  const newlyUnlocked: NewlyUnlockedAchievement[] = [];
+  let totalChapasAwarded = 0;
+
+  for (const ach of targetAchievements.sort((a, b) => a.id - b.id)) {
+    const existing = existingByAchId.get(ach.id);
+    const prevProgress = existing?.currentProgress ?? 0;
+    const raw = Math.max(prevProgress, rawProgressById[ach.id] ?? 0);
+    const wasUnlocked = existing?.unlocked ?? false;
+    const isNowUnlocked = wasUnlocked || raw >= ach.targetValue;
+    const clampedProgress = isNowUnlocked
+      ? ach.targetValue
+      : Math.min(raw, ach.targetValue);
+    const unlockedAt = wasUnlocked
+      ? existing?.unlockedAt ?? now
+      : isNowUnlocked
+      ? now
+      : null;
+
+    if (!wasUnlocked && isNowUnlocked) {
+      // Actualización condicional para evitar doble premio bajo concurrencia
+      const updatedRows = await db
+        .update(schema.userAchievements)
+        .set({
+          currentProgress: clampedProgress,
+          unlocked: true,
+          unlockedAt,
+        })
+        .where(
+          and(
+            eq(schema.userAchievements.userId, userId),
+            eq(schema.userAchievements.achievementId, ach.id),
+            eq(schema.userAchievements.unlocked, false)
+          )
+        )
+        .returning({ achievementId: schema.userAchievements.achievementId });
+
+      if (updatedRows.length > 0) {
+        const rewardCalc = calculateAchievementRewardChapas(
+          ach.rewardChapas,
+          ach.category,
+          activeRelics
+        );
+        totalChapasAwarded += rewardCalc.totalRewardChapas;
+        const rTitle = ach.rewardTitleId ? titleById.get(ach.rewardTitleId) : undefined;
+        const rIcon = ach.rewardIconId ? iconById.get(ach.rewardIconId) : undefined;
+        const rCosmetic = ach.rewardCosmeticId
+          ? cosmeticById.get(ach.rewardCosmeticId)
+          : undefined;
+        newlyUnlocked.push({
+          id: ach.id,
+          code: ach.code,
+          name: ach.name,
+          description: ach.description,
+          rewardChapas: rewardCalc.totalRewardChapas,
+          rewardTitle: rTitle ? { id: rTitle.id, name: rTitle.name } : null,
+          rewardIcon: rIcon
+            ? { id: rIcon.id, name: rIcon.name, imageUrl: rIcon.imageUrl }
+            : null,
+          rewardCosmetic: rCosmetic
+            ? {
+                id: rCosmetic.id,
+                code: rCosmetic.code,
+                type: rCosmetic.type,
+                name: rCosmetic.name,
+                previewKey: rCosmetic.previewKey,
+              }
+            : null,
+        });
+      }
+    } else if (!wasUnlocked && (!existing || existing.currentProgress !== clampedProgress)) {
+      await db
+        .update(schema.userAchievements)
+        .set({ currentProgress: clampedProgress })
+        .where(
+          and(
+            eq(schema.userAchievements.userId, userId),
+            eq(schema.userAchievements.achievementId, ach.id),
+            eq(schema.userAchievements.unlocked, false)
+          )
+        );
     }
   }
 

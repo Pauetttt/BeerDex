@@ -16,6 +16,7 @@ import { AiBindingLike, R2BucketLike, setRuntimeBindings } from '../src/config/r
 import { closeDb, getDb, initDb, schema } from '../src/db';
 import { importCatalogEntries, parseCatalogCsv } from '../src/db/importCatalog';
 import {
+  BARCODE_TO_BEER_NAME,
   BRANDS_SEED,
   isValidEan,
   isValidEan13,
@@ -65,10 +66,10 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     expect(summary1).toEqual(summary2);
     expect(summary1.brands).toBe(41);
     expect(summary1.beers).toBe(TOTAL_SEEDED_BEERS);
-    expect(summary1.achievements).toBe(100);
-    expect(summary1.titles).toBe(36);
-    expect(summary1.icons).toBe(37);
-    expect(summary1.cosmetics).toBe(48);
+    expect(summary1.achievements).toBe(110);
+    expect(summary1.titles).toBe(39);
+    expect(summary1.icons).toBe(38);
+    expect(summary1.cosmetics).toBe(50);
 
     const beers = await db.select().from(schema.beers);
     allSeededBeers = beers.map((b) => ({ id: b.id, barcode: b.barcode }));
@@ -142,6 +143,11 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     const estrellaDamm = BRANDS_SEED.find((b) => b.name === 'Estrella Damm');
     expect(estrellaGalicia?.beers.some((b) => b.name.includes('1906'))).toBe(false);
     expect(estrellaDamm?.beers.some((b) => b.name.includes('Voll-Damm'))).toBe(false);
+
+    const elAguila = BRANDS_SEED.find((b) => b.name === 'El Águila');
+    expect(elAguila?.beers.length).toBe(8);
+    expect(BARCODE_TO_BEER_NAME['8411090115093']?.brandName).toBe('El Águila');
+    expect(BARCODE_TO_BEER_NAME['8411090617269']?.brandName).toBe('El Águila');
 
     const allCodes = new Set<string>();
     for (const brand of BRANDS_SEED) {
@@ -437,7 +443,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       .get('/api/achievements')
       .set('Authorization', `Bearer ${accessTokenA}`);
     expect(achRes.status).toBe(200);
-    expect(achRes.body.totalCount).toBe(100);
+    expect(achRes.body.totalCount).toBe(110);
     const unlockedSet = new Set(
       achRes.body.achievements
         .filter((a: { unlocked: boolean }) => a.unlocked)
@@ -588,7 +594,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       .set('Authorization', `Bearer ${accessTokenA}`);
     expect(visitRes.status).toBe(200);
     expect(visitRes.body.isFriend).toBe(true);
-    expect(visitRes.body.achievements).toHaveLength(100);
+    expect(visitRes.body.achievements).toHaveLength(110);
     expect(visitRes.body.user.equippedFrame).toBeDefined();
     expect(visitRes.body.user.showcaseRelics).toHaveLength(3);
     expect(visitRes.body.comparison).toBeDefined();
@@ -665,6 +671,8 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     const ach100 = achRes.body.achievements.find((a: { id: number }) => a.id === 100);
     expect(ach100.unlocked).toBe(true);
     expect(ach100.currentProgress).toBe(99);
+    const ach101 = achRes.body.achievements.find((a: { id: number }) => a.id === 101);
+    expect(ach101.unlocked).toBe(false);
 
     // Equipar el icono exclusivo 13, título exclusivo 10 y carta 3D Oro Imperial (20)
     const equipExclusive = await request(app)

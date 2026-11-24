@@ -35,6 +35,13 @@ type FormatFilter = 'all' | BeerFormat;
 const BEERDEX_CACHE_KEY = 'beerdex_cache_v1';
 const STYLE_OPTIONS = ['all', 'Lager', 'Tostada', 'IPA', 'Negra', '0,0%', 'Trigo'] as const;
 
+function normalizeSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 export default function BeerDexScreen() {
   const router = useRouter();
   const { refreshMe } = useAuth();
@@ -59,10 +66,6 @@ export default function BeerDexScreen() {
       setData(res);
       setOfflineFallback(false);
       await AsyncStorage.setItem(BEERDEX_CACHE_KEY, JSON.stringify(res)).catch(() => {});
-      setExpandedBrandIds((prev) => {
-        if (prev.size > 0 || res.brands.length === 0) return prev;
-        return new Set([res.brands[0].id]);
-      });
     } catch {
       const cachedRaw = await AsyncStorage.getItem(BEERDEX_CACHE_KEY).catch(() => null);
       if (cachedRaw) {
@@ -123,11 +126,11 @@ export default function BeerDexScreen() {
 
   const visibleBrands = useMemo(() => {
     if (!data) return [];
-    const q = searchQuery.trim().toLowerCase();
+    const q = normalizeSearchText(searchQuery.trim());
 
     return data.brands
       .map((brand) => {
-        const brandNameMatch = q ? brand.name.toLowerCase().includes(q) : false;
+        const brandNameMatch = q ? normalizeSearchText(brand.name).includes(q) : false;
         const filteredBeers = brand.beers.filter((beer) => {
           if (filter === 'unlocked' && !beer.unlocked) return false;
           if (filter === 'locked' && beer.unlocked) return false;
@@ -136,7 +139,7 @@ export default function BeerDexScreen() {
             const beerStyle = (beer.style || '').toLowerCase();
             if (beerStyle !== styleFilter.toLowerCase()) return false;
           }
-          if (q && !brandNameMatch && !beer.name.toLowerCase().includes(q)) {
+          if (q && !brandNameMatch && !normalizeSearchText(beer.name).includes(q)) {
             return false;
           }
           return true;
@@ -400,11 +403,6 @@ export default function BeerDexScreen() {
                         </Text>
                       </View>
                     </View>
-                    {brand.history ? (
-                      <Text style={styles.brandHistory} numberOfLines={isExpanded ? 4 : 2}>
-                        {brand.history}
-                      </Text>
-                    ) : null}
                     <View style={styles.brandMiniTrack}>
                       <LinearGradient
                         colors={GRADIENTS.progress}
@@ -422,6 +420,21 @@ export default function BeerDexScreen() {
                     />
                   </View>
                 </Pressable>
+
+                {brand.history ? (
+                  <View style={styles.brandHistoryBox}>
+                    <ScrollView
+                      nestedScrollEnabled
+                      showsVerticalScrollIndicator
+                      style={[
+                        styles.brandHistoryScroll,
+                        isExpanded && styles.brandHistoryScrollExpanded,
+                      ]}
+                    >
+                      <Text style={styles.brandHistory}>{brand.history}</Text>
+                    </ScrollView>
+                  </View>
+                ) : null}
 
                 {isExpanded ? (
                   <View style={styles.brandBody}>
@@ -699,10 +712,20 @@ const styles = StyleSheet.create({
   brandCountTextCompleted: {
     color: COLORS.gold,
   },
+  brandHistoryBox: {
+    paddingHorizontal: SPACING.md + 2,
+    paddingBottom: SPACING.md,
+  },
+  brandHistoryScroll: {
+    maxHeight: 58,
+  },
+  brandHistoryScrollExpanded: {
+    maxHeight: 112,
+  },
   brandHistory: {
     color: COLORS.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
+    fontSize: 12.5,
+    lineHeight: 18,
   },
   brandMiniTrack: {
     height: 4,

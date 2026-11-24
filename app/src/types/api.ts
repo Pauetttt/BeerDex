@@ -276,6 +276,15 @@ export interface BarcodeLookupResponse {
   brandBeers?: BarcodeLookupBeerItem[];
 }
 
+export interface RegisterBeerTabernaUpdate {
+  tabernaId: string;
+  tabernaName: string;
+  slotLabel: string | null;
+  milestonesReached: string[];
+  chapasEarned: number;
+  pointsAwarded: number;
+}
+
 export interface RegisterBeerResponse {
   userBeer: {
     id: string;
@@ -297,6 +306,8 @@ export interface RegisterBeerResponse {
     label: string;
   }>;
   achievementChapas?: number;
+  tabernaChapas?: number;
+  tabernaUpdates?: RegisterBeerTabernaUpdate[];
   totalChapas?: number;
 }
 
@@ -426,4 +437,235 @@ export interface PublicProfileResponse {
     totalCount: number;
   };
   newlyUnlocked: NewlyUnlockedItem[];
+}
+
+export type TabernaVisibility = 'public' | 'private';
+export type TabernaRole = 'leader' | 'member';
+export type TabernaGameType = 'bingo' | 'escalera' | 'ruta' | 'tridente' | 'cata';
+
+export interface BingoCellConfig {
+  index: number;
+  beerId: number;
+  beerName: string;
+  brandName: string;
+  style: string;
+  abv: number;
+  format: BeerFormat;
+  country: string;
+}
+
+export interface EscaleraStepConfig {
+  index: number;
+  key: string;
+  label: string;
+  minAbv: number | null;
+  maxAbv: number | null;
+}
+
+export interface RutaCountryConfig {
+  key: string;
+  name: string;
+}
+
+export interface TridenteChallengeConfig {
+  id: string;
+  title: string;
+  description: string;
+  ruleType: 'country_not_spain' | 'abv_gte' | 'style' | 'format';
+  ruleValue: string | number;
+}
+
+export interface TabernaMissionConfig {
+  cells?: BingoCellConfig[];
+  steps?: EscaleraStepConfig[];
+  countries?: RutaCountryConfig[];
+  targetCount?: number;
+  challenges?: TridenteChallengeConfig[];
+  style?: string;
+  targetTotal?: number;
+}
+
+export interface TabernaMissionProgress {
+  markedCells?: Record<
+    string,
+    { beerId: number; userId: string; username: string; markedAt: string }
+  >;
+  completedLines?: string[];
+  completedSteps?: Record<
+    string,
+    {
+      beerId: number;
+      beerName: string;
+      abv: number;
+      userId: string;
+      username: string;
+      completedAt: string;
+    }
+  >;
+  currentStepIndex?: number;
+  completedCountries?: Record<
+    string,
+    { beerId: number; beerName: string; userId: string; username: string; completedAt: string }
+  >;
+  memberProgress?: Record<
+    string,
+    {
+      completedChallengeIds: string[];
+      beersByChallenge: Record<
+        string,
+        { beerId: number; beerName: string; completedAt: string }
+      >;
+      completedAt: string | null;
+    }
+  >;
+  totalCount?: number;
+  leaderboard?: Record<string, { username: string; count: number; lastAt: string }>;
+  flawless?: boolean;
+}
+
+export interface TabernaContributionItem {
+  id: number;
+  userId: string;
+  username: string;
+  beerId: number;
+  beerName: string;
+  brandName: string;
+  slotKey: string | null;
+  createdAt: string;
+}
+
+export interface TabernaMissionDto {
+  id: string;
+  tabernaId: string;
+  month: string;
+  gameType: TabernaGameType;
+  title: string;
+  subtitle: string;
+  status: 'active' | 'completed' | 'expired';
+  config: TabernaMissionConfig;
+  progress: TabernaMissionProgress;
+  pointsAwarded: number;
+  completionPct: number;
+  completedCount: number;
+  totalTarget: number;
+  createdAt: string;
+  completedAt: string | null;
+  recentContributions: TabernaContributionItem[];
+}
+
+export interface TabernaSummary {
+  id: string;
+  name: string;
+  description: string;
+  visibility: TabernaVisibility;
+  minBeers: number;
+  leaderId: string;
+  founderId: string | null;
+  level: number;
+  points: number;
+  nextLevelPoints: number | null;
+  memberCount: number;
+  maxMembers: number;
+  myRole: TabernaRole | null;
+  pendingRequestId: string | null;
+  cooldownUntil: string | null;
+  currentMission: {
+    id: string;
+    month: string;
+    gameType: TabernaGameType;
+    title: string;
+    status: 'active' | 'completed' | 'expired';
+    completionPct: number;
+  } | null;
+  createdAt: string;
+}
+
+export type TabernaExploreItem = TabernaSummary;
+
+export interface TabernaMemberItem {
+  userId: string;
+  username: string;
+  role: TabernaRole;
+  joinedAt: string;
+  beersCount: number;
+  equippedIcon: { id: number; name: string; imageUrl: string };
+  equippedTitle: { id: number; name: string };
+  equippedFrame: FriendFrameSummary | null;
+}
+
+export interface TabernaRequestItem {
+  id: string;
+  tabernaId: string;
+  userId: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+  user: {
+    id: string;
+    username: string;
+    beersCount: number;
+    equippedIcon: { id: number; name: string; imageUrl: string };
+    equippedTitle: { id: number; name: string };
+    equippedFrame: FriendFrameSummary | null;
+  };
+}
+
+export interface TabernaDetailResponse {
+  taberna: TabernaSummary;
+  members: TabernaMemberItem[];
+  mission: TabernaMissionDto;
+  myRole: TabernaRole | null;
+  myBeersCount: number;
+  pendingRequestsCount: number;
+}
+
+export interface TabernaScanResponse {
+  status:
+    | 'valid'
+    | 'already_contributed'
+    | 'invalid'
+    | 'mission_completed'
+    | 'needs_variety_confirm';
+  message: string;
+  taberna: {
+    id: string;
+    name: string;
+    level: number;
+    points: number;
+    nextLevelPoints: number | null;
+  };
+  beer: BarcodeLookupBeerItem;
+  brandBeers?: BarcodeLookupBeerItem[];
+  slotKey?: string | null;
+  slotLabel?: string | null;
+  milestonesReached: string[];
+  chapasEarned: number;
+  pointsAwarded: number;
+  levelUp: {
+    fromLevel: number;
+    toLevel: number;
+    chapasPerMember: number;
+  } | null;
+  newlyUnlocked: NewlyUnlockedItem[];
+  mission: TabernaMissionDto;
+}
+
+export interface TabernaRankingEntry {
+  rank: number;
+  id: string;
+  name: string;
+  description: string;
+  visibility: TabernaVisibility;
+  level: number;
+  points: number;
+  monthlyPoints: number;
+  memberCount: number;
+  maxMembers: number;
+  isMember: boolean;
+  currentGameType: TabernaGameType | null;
+}
+
+export interface TabernaRankingResponse {
+  scope: 'global' | 'monthly';
+  month: string;
+  ranking: TabernaRankingEntry[];
 }

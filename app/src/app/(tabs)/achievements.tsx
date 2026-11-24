@@ -35,6 +35,7 @@ const CATEGORIES = [
   'Geografía y Rutas',
   'Social y Amigos',
   'Perfil y Constancia',
+  'Tabernas y Hermandad',
   'Logro Definitivo',
 ] as const;
 
@@ -49,7 +50,7 @@ export default function AchievementsScreen() {
   const theme = useAppTheme();
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [unlockedCount, setUnlockedCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(100);
+  const [totalCount, setTotalCount] = useState(110);
   const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

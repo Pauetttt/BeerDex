@@ -16,6 +16,14 @@ import {
   ShopBuyResponse,
   ShopItemType,
   ShopResponse,
+  TabernaDetailResponse,
+  TabernaExploreItem,
+  TabernaMissionDto,
+  TabernaRankingResponse,
+  TabernaRequestItem,
+  TabernaScanResponse,
+  TabernaSummary,
+  TabernaVisibility,
   UserSearchItem,
 } from '../types/api';
 import { clearTokens, getTokens, setTokens } from './tokenStorage';
@@ -395,5 +403,105 @@ export const friendsApi = {
   },
   getUserProfile(userId: string) {
     return request<PublicProfileResponse>(`/users/${userId}/profile`);
+  },
+};
+
+export const tabernasApi = {
+  getMine() {
+    return request<{ tabernas: TabernaSummary[] }>('/tabernas');
+  },
+  explore(q = '') {
+    const query = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+    return request<{ tabernas: TabernaExploreItem[] }>(`/tabernas/explore${query}`);
+  },
+  create(payload: {
+    name: string;
+    description: string;
+    visibility: TabernaVisibility;
+    minBeers: number;
+  }) {
+    return request<{
+      taberna: TabernaSummary;
+      newBalance: number;
+      newlyUnlocked: NewlyUnlockedItem[];
+    }>('/tabernas', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+  getDetail(tabernaId: string) {
+    return request<TabernaDetailResponse>(`/tabernas/${tabernaId}`);
+  },
+  update(
+    tabernaId: string,
+    payload: {
+      description?: string;
+      visibility?: TabernaVisibility;
+      minBeers?: number;
+    }
+  ) {
+    return request<{ taberna: TabernaSummary }>(`/tabernas/${tabernaId}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+  },
+  remove(tabernaId: string) {
+    return request<{ ok: boolean }>(`/tabernas/${tabernaId}`, {
+      method: 'DELETE',
+    });
+  },
+  join(tabernaId: string) {
+    return request<{
+      joined: boolean;
+      requested: boolean;
+      requestId?: string;
+      newlyUnlocked: NewlyUnlockedItem[];
+    }>(`/tabernas/${tabernaId}/join`, {
+      method: 'POST',
+    });
+  },
+  leave(tabernaId: string) {
+    return request<{
+      ok: boolean;
+      deletedTaberna: boolean;
+      newLeaderId: string | null;
+    }>(`/tabernas/${tabernaId}/leave`, {
+      method: 'POST',
+    });
+  },
+  getRequests(tabernaId: string) {
+    return request<{ requests: TabernaRequestItem[] }>(`/tabernas/${tabernaId}/requests`);
+  },
+  acceptRequest(tabernaId: string, requestId: string) {
+    return request<{ ok: boolean; status: 'accepted' }>(
+      `/tabernas/${tabernaId}/requests/${requestId}/accept`,
+      { method: 'POST' }
+    );
+  },
+  rejectRequest(tabernaId: string, requestId: string) {
+    return request<{ ok: boolean; status: 'rejected' }>(
+      `/tabernas/${tabernaId}/requests/${requestId}/reject`,
+      { method: 'POST' }
+    );
+  },
+  kickMember(tabernaId: string, targetUserId: string) {
+    return request<{ ok: boolean }>(`/tabernas/${tabernaId}/members/${targetUserId}`, {
+      method: 'DELETE',
+    });
+  },
+  getMission(tabernaId: string) {
+    return request<{ mission: TabernaMissionDto }>(`/tabernas/${tabernaId}/mission`);
+  },
+  scan(
+    tabernaId: string,
+    payload: { code?: string; beerId?: number; frameBase64?: string }
+  ) {
+    return request<TabernaScanResponse>(`/tabernas/${tabernaId}/scan`, {
+      method: 'POST',
+      body: payload,
+    });
+  },
+  getRanking(scope: 'global' | 'monthly' = 'global') {
+    return request<TabernaRankingResponse>(`/tabernas/ranking?scope=${scope}`);
   },
 };

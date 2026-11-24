@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { ChapaCoinIcon } from '../components/ChapaCoinIcon';
 import { GlobalHeader } from '../components/GlobalHeader';
 import { ProfileIcon } from '../components/ProfileIcon';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
+import { tabernasApi } from '../services/api';
 import { COLORS, FONTS, GRADIENTS, RADIUS, SHADOWS, SPACING } from '../theme/tokens';
 
 export default function MenuScreen() {
@@ -16,11 +17,16 @@ export default function MenuScreen() {
   const { user, meProfile, loading, refreshMe } = useAuth();
   const userId = user?.id ?? null;
   const theme = useAppTheme();
+  const [myTabernasCount, setMyTabernasCount] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       if (userId) {
         refreshMe();
+        tabernasApi
+          .getMine()
+          .then((res) => setMyTabernasCount(res.tabernas.length))
+          .catch(() => {});
       }
     }, [userId, refreshMe])
   );
@@ -30,9 +36,9 @@ export default function MenuScreen() {
   }
 
   const beersRegistered = meProfile?.stats.beersRegistered ?? 0;
-  const beersTotal = meProfile?.stats.beersTotal ?? 557;
+  const beersTotal = meProfile?.stats.beersTotal ?? 559;
   const achUnlocked = meProfile?.stats.achievementsUnlocked ?? 0;
-  const achTotal = meProfile?.stats.achievementsTotal ?? 100;
+  const achTotal = meProfile?.stats.achievementsTotal ?? 110;
   const chapasBalance = user?.chapas ?? 0;
   const beersPct = beersTotal > 0 ? Math.min(100, Math.round((beersRegistered / beersTotal) * 100)) : 0;
   const achPct = achTotal > 0 ? Math.min(100, Math.round((achUnlocked / achTotal) * 100)) : 0;
@@ -193,6 +199,50 @@ export default function MenuScreen() {
           </Pressable>
 
           <Pressable
+            onPress={() => router.push('/tabernas')}
+            style={({ pressed }) => [
+              isTwoCol ? styles.menuItemHalf : styles.menuItemFull,
+              pressed && styles.pressed,
+            ]}
+          >
+            <LinearGradient
+              colors={GRADIENTS.unlocked}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.menuCard,
+                { borderColor: theme.border },
+                SHADOWS.card,
+              ]}
+            >
+              <View style={[styles.iconBox, { borderColor: theme.border }]}>
+                <Ionicons name="shield-half" size={26} color={theme.bright} />
+              </View>
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle}>Tabernas</Text>
+                <Text style={styles.cardDesc} numberOfLines={2}>
+                  Hermandades de hasta 10 jugadores, minijuegos mensuales y ranking
+                </Text>
+                <View
+                  style={[
+                    styles.statPill,
+                    { backgroundColor: theme.tintBg, borderColor: theme.border },
+                  ]}
+                >
+                  <Text style={[styles.statPillText, { color: theme.bright }]}>
+                    {myTabernasCount !== null
+                      ? `${myTabernasCount} / 5 Tabernas`
+                      : 'Multijugador mensual'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.chevronCircle}>
+                <Ionicons name="chevron-forward" size={20} color={theme.bright} />
+              </View>
+            </LinearGradient>
+          </Pressable>
+
+          <Pressable
             onPress={() => router.push('/(tabs)/shop')}
             style={({ pressed }) => [
               isTwoCol ? styles.menuItemHalf : styles.menuItemFull,
@@ -308,7 +358,10 @@ export default function MenuScreen() {
 
           <Pressable
             onPress={() => router.push('/treasury')}
-            style={({ pressed }) => [styles.menuItemFull, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              isTwoCol ? styles.menuItemHalf : styles.menuItemFull,
+              pressed && styles.pressed,
+            ]}
           >
             <LinearGradient
               colors={GRADIENTS.card}
