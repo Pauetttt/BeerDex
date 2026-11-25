@@ -36,7 +36,7 @@ export default function MenuScreen() {
   }
 
   const beersRegistered = meProfile?.stats.beersRegistered ?? 0;
-  const beersTotal = meProfile?.stats.beersTotal ?? 559;
+  const beersTotal = meProfile?.stats.beersTotal ?? 473;
   const achUnlocked = meProfile?.stats.achievementsUnlocked ?? 0;
   const achTotal = meProfile?.stats.achievementsTotal ?? 110;
   const chapasBalance = user?.chapas ?? 0;

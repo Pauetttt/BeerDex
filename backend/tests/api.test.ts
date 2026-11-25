@@ -16,8 +16,10 @@ import { AiBindingLike, R2BucketLike, setRuntimeBindings } from '../src/config/r
 import { closeDb, getDb, initDb, schema } from '../src/db';
 import { importCatalogEntries, parseCatalogCsv } from '../src/db/importCatalog';
 import {
+  ACHIEVEMENTS_SEED,
   BARCODE_TO_BEER_NAME,
   BRANDS_SEED,
+  EXTRA_BARCODE_TO_BEER_NAME,
   isValidEan,
   isValidEan13,
   seedDatabase,
@@ -149,7 +151,20 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     expect(BARCODE_TO_BEER_NAME['8411090115093']?.brandName).toBe('El Águila');
     expect(BARCODE_TO_BEER_NAME['8411090617269']?.brandName).toBe('El Águila');
 
+    expect(TOTAL_SEEDED_BEERS).toBe(473);
     const allCodes = new Set<string>();
+    let totalExtraCount = 0;
+    let lataCount = 0;
+    let botellinCount = 0;
+    let litronaCount = 0;
+    let zeroAlcoholCount = 0;
+    let styleExplorerCount = 0;
+    let lagerCount = 0;
+    let tostadaCount = 0;
+    let negraCount = 0;
+    let ipaCount = 0;
+    let trigoCount = 0;
+
     for (const brand of BRANDS_SEED) {
       for (const beer of brand.beers) {
         expect(isValidEan13(beer.barcode)).toBe(true);
@@ -159,8 +174,35 @@ describe('BeerDex Backend API & Achievement Engine', () => {
           expect(isValidEan(extra)).toBe(true);
           expect(allCodes.has(extra)).toBe(false);
           allCodes.add(extra);
+          totalExtraCount += 1;
         }
+        if (beer.format === 'lata') lataCount += 1;
+        if (beer.format === 'botellin') botellinCount += 1;
+        if (beer.format === 'litrona') litronaCount += 1;
+        if (Number(beer.abv) === 0 || /0[,.]0|sin alcohol/i.test(beer.style)) zeroAlcoholCount += 1;
+        if (/negra|tostada|ipa/i.test(beer.style)) styleExplorerCount += 1;
+        if (/lager/i.test(beer.style)) lagerCount += 1;
+        if (/tostada/i.test(beer.style)) tostadaCount += 1;
+        if (/negra|stout|porter/i.test(beer.style)) negraCount += 1;
+        if (/ipa/i.test(beer.style)) ipaCount += 1;
+        if (/trigo|weizen|wheat/i.test(beer.style)) trigoCount += 1;
       }
+    }
+
+    expect(Object.keys(EXTRA_BARCODE_TO_BEER_NAME).length).toBe(totalExtraCount);
+
+    for (const ach of ACHIEVEMENTS_SEED) {
+      if (ach.id >= 1 && ach.id <= 16) expect(ach.targetValue).toBeLessThanOrEqual(TOTAL_SEEDED_BEERS);
+      if (ach.id >= 33 && ach.id <= 37) expect(ach.targetValue).toBeLessThanOrEqual(lataCount);
+      if (ach.id >= 38 && ach.id <= 42) expect(ach.targetValue).toBeLessThanOrEqual(botellinCount);
+      if (ach.id >= 43 && ach.id <= 45) expect(ach.targetValue).toBeLessThanOrEqual(litronaCount);
+      if (ach.id >= 48 && ach.id <= 50) expect(ach.targetValue).toBeLessThanOrEqual(zeroAlcoholCount);
+      if (ach.id === 51) expect(ach.targetValue).toBeLessThanOrEqual(styleExplorerCount);
+      if (ach.id >= 52 && ach.id <= 53) expect(ach.targetValue).toBeLessThanOrEqual(lagerCount);
+      if (ach.id >= 54 && ach.id <= 55) expect(ach.targetValue).toBeLessThanOrEqual(tostadaCount);
+      if (ach.id >= 56 && ach.id <= 57) expect(ach.targetValue).toBeLessThanOrEqual(negraCount);
+      if (ach.id >= 58 && ach.id <= 59) expect(ach.targetValue).toBeLessThanOrEqual(ipaCount);
+      if (ach.id >= 60 && ach.id <= 61) expect(ach.targetValue).toBeLessThanOrEqual(trigoCount);
     }
   });
 
@@ -315,7 +357,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
 
     // Resolver códigos de packs/cajas, UPC-A (12 dígitos), UPC-E (8 dígitos) y GTIN-14
     const packAndFormatCases: Array<[string, string]> = [
-      ['8413681301267', 'Alhambra Reserva 1925 Botellín'],
+      ['8413681021820', 'Alhambra Reserva 1925 Botellín'],
       ['8712000011079', 'Heineken Original Lata'],
       ['8410793226433', 'Victoria Málaga Clásica Lata'],
       ['8410590111086', 'El Águila Sin Filtrar Botellín'],
@@ -328,6 +370,17 @@ describe('BeerDex Backend API & Achievement Engine', () => {
       ['07289440', 'Amstel Light Botellín'],
       ['01840623', 'Budweiser Select Botellín'],
       ['08412598004964', '1906 Reserva Especial Botellín'],
+      ['8410793173119', 'Keler 18 Litrona'],
+      ['8410793181947', 'Keler 18 Botellín'],
+      ['8410700005052', 'Moritz Radler Limón Lata'],
+      ['8410700005021', 'Moritz Radler Limón Botellín'],
+      ['8414161000007', 'Dorada Sin con Limón 0,0 Lata'],
+      ['8414161000052', 'Dorada Sin con Limón 0,0 Botellín'],
+      ['5601164115606', 'Super Bock Original Litrona'],
+      ['8410569037577', 'Amstel Clásica Litrona'],
+      ['8008440246004', 'Asahi Super Dry Botellín'],
+      ['0080157175240', 'Paulaner Oktoberfest Bier Litrona'],
+      ['5410228201236', 'Leffe Brune Lata'],
     ];
 
     for (const [code, expectedName] of packAndFormatCases) {
@@ -336,6 +389,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
         .set('Authorization', `Bearer ${accessTokenA}`);
       expect(lookupRes.status).toBe(200);
       expect(lookupRes.body.beer.name).toBe(expectedName);
+      expect(lookupRes.body.needsVarietyConfirm).toBe(false);
     }
 
     // Prefijo compartido GS1 Etapa 4 -> solicita confirmación y devuelve marcas relacionadas

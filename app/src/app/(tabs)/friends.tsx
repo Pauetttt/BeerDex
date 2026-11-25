@@ -298,7 +298,7 @@ export default function FriendsScreen() {
                             {item.user.equippedTitle.name}
                           </Text>
                           <Text style={styles.friendStats}>
-                            {item.user.beersCount} / {item.user.beersTotal ?? 559} cervezas
+                            {item.user.beersCount} / {item.user.beersTotal ?? 473} cervezas
                           </Text>
                         </View>
                       </Pressable>
