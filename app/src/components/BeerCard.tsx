@@ -34,6 +34,10 @@ interface Props {
 
 const CARD_HEIGHT = 296;
 
+function formatCommunityAverage(avg: number): string {
+  return avg.toFixed(1).replace('.', ',');
+}
+
 export const BeerCard = React.memo(function BeerCard({
   beer,
   onFlipToBack,
@@ -163,9 +167,19 @@ export const BeerCard = React.memo(function BeerCard({
                   <Text style={[styles.flipHintText, { color: cardAccentColor }]}>↻</Text>
                 </View>
               </View>
-              <Text style={styles.dateText}>
-                {formatDateDDMMYYYY(beer.userBeer.registeredAt)}
-              </Text>
+              <View style={styles.dateMetaRow}>
+                <Text style={styles.dateText}>
+                  {formatDateDDMMYYYY(beer.userBeer.registeredAt)}
+                </Text>
+                {beer.communityRating ? (
+                  <View style={[styles.communityChip, { borderColor: cardBorderColor }]}>
+                    <Ionicons name="star" size={9.5} color={cardAccentColor} />
+                    <Text style={[styles.communityChipText, { color: cardAccentColor }]}>
+                      {formatCommunityAverage(beer.communityRating.average)} ({beer.communityRating.count})
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
 
             <View style={[styles.photoBox, { borderColor: cardBorderColor }]}>
@@ -247,6 +261,21 @@ export const BeerCard = React.memo(function BeerCard({
               <View style={[styles.codexHairline, { backgroundColor: cardBorderColor }]} />
             </View>
 
+            {beer.communityRating ? (
+              <View style={[styles.communityRatingRow, { borderColor: cardBorderColor }]}>
+                <Text style={styles.communityRatingLabel}>MEDIA GLOBAL</Text>
+                <View style={styles.communityRatingValueWrap}>
+                  <Ionicons name="star" size={11} color={cardAccentColor} />
+                  <Text style={[styles.communityRatingVal, { color: cardAccentColor }]}>
+                    {formatCommunityAverage(beer.communityRating.average)}
+                  </Text>
+                  <Text style={styles.communityRatingCount}>
+                    ({beer.communityRating.count})
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
             <View style={styles.statsRow}>
               <View style={[styles.statBox, { borderColor: cardBorderColor }]}>
                 <Text style={styles.statLabel}>ESTILO</Text>
@@ -306,7 +335,17 @@ export const BeerCard = React.memo(function BeerCard({
             </View>
 
             <View style={styles.zoomFooter}>
+              <Text style={styles.zoomPersonalLabel}>Tu valoración</Text>
               <StarRating rating={beer.userBeer.rating} size={22} readonly />
+              {beer.communityRating ? (
+                <View style={styles.zoomCommunityRow}>
+                  <Ionicons name="star" size={13} color={COLORS.amberBright} />
+                  <Text style={styles.zoomCommunityText}>
+                    Media global: {formatCommunityAverage(beer.communityRating.average)} ({beer.communityRating.count}{' '}
+                    {beer.communityRating.count === 1 ? 'valoración' : 'valoraciones'})
+                  </Text>
+                </View>
+              ) : null}
             </View>
           </View>
         </View>
@@ -447,10 +486,30 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '900',
   },
+  dateMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
   dateText: {
     color: COLORS.textMuted,
     fontSize: 10,
     fontWeight: '600',
+  },
+  communityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2.5,
+    backgroundColor: 'rgba(18, 12, 8, 0.72)',
+    borderWidth: 1,
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  communityChipText: {
+    fontSize: 9.5,
+    fontWeight: '800',
   },
   photoBox: {
     width: '100%',
@@ -544,11 +603,42 @@ const styles = StyleSheet.create({
   },
   shortHistory: {
     color: '#F6E8CF',
-    fontSize: 11.5,
+    fontSize: 11,
     fontStyle: 'italic',
-    lineHeight: 16,
+    lineHeight: 15,
     flex: 1,
+    paddingVertical: 2,
+  },
+  communityRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(10, 7, 5, 0.64)',
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
     paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginBottom: 4,
+  },
+  communityRatingLabel: {
+    color: COLORS.textMuted,
+    fontSize: 8.5,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  communityRatingValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  communityRatingVal: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  communityRatingCount: {
+    color: COLORS.textMuted,
+    fontSize: 9.5,
+    fontWeight: '600',
   },
   statsRow: {
     flexDirection: 'row',
@@ -636,5 +726,24 @@ const styles = StyleSheet.create({
   },
   zoomFooter: {
     alignItems: 'center',
+    gap: 6,
+  },
+  zoomPersonalLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  zoomCommunityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  zoomCommunityText: {
+    color: COLORS.textSecondary,
+    fontSize: 12.5,
+    fontWeight: '600',
   },
 });

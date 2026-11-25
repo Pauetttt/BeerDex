@@ -335,6 +335,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     });
     expect(dexInit.body.brands[0].beers[0].unlocked).toBe(false);
     expect(dexInit.body.brands[0].beers[0].shortHistory).toBeUndefined();
+    expect(dexInit.body.brands[0].beers[0].communityRating).toBeUndefined();
 
     // Resolver códigos de barras alternativos reales (EAN-8 y variantes EAN-13 comerciales)
     const coronaEan8 = await request(app)
@@ -438,6 +439,7 @@ describe('BeerDex Backend API & Achievement Engine', () => {
 
     expect(regBeer1.status).toBe(201);
     trackUploadUrl(regBeer1.body.userBeer.photoUrl);
+    expect(regBeer1.body.communityRating).toEqual({ average: 5, count: 1 });
     expect(regBeer1.body.baseChapas).toBe(10);
     expect(regBeer1.body.completedBrandBonus).toBe(0);
     const unlockedIds1 = regBeer1.body.newlyUnlocked.map((a: { id: number }) => a.id);
@@ -607,6 +609,26 @@ describe('BeerDex Backend API & Achievement Engine', () => {
     expect(
       regTodayB.body.newlyUnlocked.some((a: { id: number }) => a.id === 98)
     ).toBe(true);
+
+    // Media global solo visible en cervezas registradas (nunca en bloqueadas)
+    const dexA = await request(app)
+      .get('/api/beerdex')
+      .set('Authorization', `Bearer ${accessTokenA}`);
+    expect(dexA.status).toBe(200);
+    const sharedBeerA = dexA.body.brands
+      .flatMap((br: { beers: Array<{ id: number; unlocked: boolean; communityRating?: { average: number; count: number } }> }) => br.beers)
+      .find((b: { id: number }) => b.id === allSeededBeers[0].id);
+    expect(sharedBeerA?.unlocked).toBe(true);
+    expect(sharedBeerA?.communityRating).toEqual({ average: 4.5, count: 2 });
+
+    const dexB = await request(app)
+      .get('/api/beerdex')
+      .set('Authorization', `Bearer ${accessTokenB}`);
+    expect(dexB.status).toBe(200);
+    const lockedBeerB = dexB.body.brands
+      .flatMap((br: { beers: Array<{ unlocked: boolean; communityRating?: unknown }> }) => br.beers)
+      .find((b: { unlocked: boolean }) => !b.unlocked);
+    expect(lockedBeerB?.communityRating).toBeUndefined();
   });
 
   it('gestiona amigos, solicitudes, visita de perfil y Rivalidad Sana (#81)', async () => {

@@ -371,6 +371,11 @@ export default function ScanRegisterScreen() {
         const names = res.tabernaUpdates.map((t) => t.tabernaName).join(', ');
         parts.push(`Aportada a Taberna: ${names}`);
       }
+      if (res.communityRating) {
+        parts.push(
+          `Media global: ★ ${res.communityRating.average.toFixed(1).replace('.', ',')} (${res.communityRating.count})`
+        );
+      }
 
       if (res.newlyUnlocked?.length) {
         showAchievements(res.newlyUnlocked);

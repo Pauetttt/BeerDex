@@ -209,6 +209,11 @@ export interface BeerDexBeerLocked {
   unlocked: false;
 }
 
+export interface CommunityBeerRating {
+  average: number;
+  count: number;
+}
+
 export interface BeerDexBeerUnlocked {
   id: number;
   brandId: number;
@@ -225,6 +230,7 @@ export interface BeerDexBeerUnlocked {
     rating: number;
     registeredAt: string;
   };
+  communityRating?: CommunityBeerRating;
 }
 
 export type BeerDexItem = BeerDexBeerLocked | BeerDexBeerUnlocked;
@@ -293,6 +299,7 @@ export interface RegisterBeerResponse {
     rating: number;
     registeredAt: string;
   };
+  communityRating?: CommunityBeerRating;
   newlyUnlocked: NewlyUnlockedItem[];
   chapasEarned?: number;
   baseChapas?: number;

@@ -81,6 +81,28 @@ router.get(
     ]);
 
     const userBeerMap = new Map(userBeers.map((ub) => [ub.beerId, ub]));
+
+    const ratingStatsMap = new Map<number, { average: number; count: number }>();
+    if (userBeers.length > 0) {
+      const unlockedBeerIds = userBeers.map((ub) => ub.beerId);
+      const statsRows = await db
+        .select({
+          beerId: schema.userBeers.beerId,
+          avgRating: sql<string>`ROUND(AVG(${schema.userBeers.rating})::numeric, 1)`,
+          ratingsCount: sql<number>`COUNT(*)::int`,
+        })
+        .from(schema.userBeers)
+        .where(inArray(schema.userBeers.beerId, unlockedBeerIds))
+        .groupBy(schema.userBeers.beerId);
+
+      for (const row of statsRows) {
+        ratingStatsMap.set(row.beerId, {
+          average: Number(row.avgRating),
+          count: Number(row.ratingsCount),
+        });
+      }
+    }
+
     const beersByBrand = new Map<number, typeof allBeers>();
     for (const beer of allBeers) {
       let arr = beersByBrand.get(beer.brandId);
@@ -114,6 +136,10 @@ router.get(
               photoUrl: ub.photoUrl,
               rating: ub.rating,
               registeredAt: new Date(ub.registeredAt).toISOString(),
+            },
+            communityRating: ratingStatsMap.get(beer.id) ?? {
+              average: ub.rating,
+              count: 1,
             },
           };
         }
@@ -441,10 +467,25 @@ router.post(
     );
     const tabernaChapas = tabernaHook.totalChapasEarned;
 
-    const [updatedUser] = await db
-      .select({ chapas: schema.users.chapas })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId));
+    const [updatedUserRows, communityRatingRows] = await Promise.all([
+      db
+        .select({ chapas: schema.users.chapas })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId)),
+      db
+        .select({
+          avgRating: sql<string>`ROUND(AVG(${schema.userBeers.rating})::numeric, 1)`,
+          ratingsCount: sql<number>`COUNT(*)::int`,
+        })
+        .from(schema.userBeers)
+        .where(eq(schema.userBeers.beerId, beerId)),
+    ]);
+    const updatedUser = updatedUserRows[0];
+    const communityRow = communityRatingRows[0];
+    const communityRating = {
+      average: communityRow?.avgRating ? Number(communityRow.avgRating) : rating,
+      count: communityRow?.ratingsCount ? Number(communityRow.ratingsCount) : 1,
+    };
 
     // Solo reevaluar amigos (Rivalidad Sana) si el usuario acaba de completar el 100 % de esta marca
     if (brandCompletedNow) {
@@ -466,6 +507,7 @@ router.post(
         rating: created.rating,
         registeredAt: new Date(created.registeredAt).toISOString(),
       },
+      communityRating,
       newlyUnlocked: mergedUnlocked,
       chapasEarned: directChapas + achievementChapas + tabernaChapas,
       baseChapas,
