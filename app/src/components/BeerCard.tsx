@@ -190,12 +190,15 @@ export const BeerCard = React.memo(function BeerCard({
             </View>
 
             <View style={styles.frontFooter}>
-              <StarRating rating={beer.userBeer.rating} size={13} readonly />
               <View style={[styles.formatBadge, { borderColor: cardBorderColor }]}>
-                <Text style={[styles.formatBadgeText, { color: cardAccentColor }]}>
+                <Text
+                  style={[styles.formatBadgeText, { color: cardAccentColor }]}
+                  numberOfLines={1}
+                >
                   {FORMAT_LABELS[beer.format]}
                 </Text>
               </View>
+              <StarRating rating={beer.userBeer.rating} size={14} readonly />
             </View>
           </LinearGradient>
         </Animated.View>
@@ -451,7 +454,7 @@ const styles = StyleSheet.create({
   },
   photoBox: {
     width: '100%',
-    height: 138,
+    height: 132,
     borderRadius: RADIUS.md + 2,
     backgroundColor: 'rgba(10, 8, 6, 0.86)',
     borderWidth: 1.5,
@@ -485,18 +488,19 @@ const styles = StyleSheet.create({
     ...WEB_GLASS,
   },
   frontFooter: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 4,
+    justifyContent: 'center',
+    gap: 5,
   },
   formatBadge: {
     backgroundColor: 'rgba(18, 12, 8, 0.72)',
     borderWidth: 1,
     borderColor: COLORS.borderGold,
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 2.5,
     borderRadius: 6,
+    maxWidth: '100%',
   },
   formatBadgeText: {
     color: COLORS.amberBright,
